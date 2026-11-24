@@ -1,4 +1,5 @@
 import { formatDate } from '../../utils/format.js'
+import { serverEnabled } from '../serverState.js'
 import * as db from './db.js'
 import { replaceHistory, useChatStore } from './store.js'
 import type { Session } from './types.js'
@@ -9,7 +10,13 @@ export { BackupError } from './history/errors.js'
 let backupQueue: Promise<unknown> = Promise.resolve()
 
 const enqueueBackup = <T>(run: () => Promise<T>): Promise<T> => {
-  const task = backupQueue.then(run)
+  // Server-mode imports share their IndexedDB staging stores with other tabs.
+  // Hold the lock through the remote commit and the local staging promotion.
+  const task = backupQueue.then(() =>
+    serverEnabled() && navigator.locks
+      ? navigator.locks.request('chat-demo:history-backup', run)
+      : run()
+  )
   backupQueue = task.catch(() => {})
   return task
 }

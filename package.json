@@ -10,7 +10,9 @@
     "build": "rm -rf dist && NODE_ENV=production rspack build -c rspack.config.ts",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src rspack.config.ts",
-    "format": "oxfmt --write ."
+    "format": "oxfmt --write .",
+    "start": "node server/start.mjs",
+    "test": "node --experimental-transform-types --test server/*.test.mjs tests/*.test.mjs"
   },
   "dependencies": {
     "@types/katex": "^0.16.5",

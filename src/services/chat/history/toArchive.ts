@@ -253,6 +253,15 @@ export const toSessionFile = (original: Session, exportImage: ExportImage): Sess
       inserted_at: iso(message.createdAt),
       fragments:
         message.role === 'user' ? userFragments(message, exportImage) : assistantFragments(message),
+      ...(message.role === 'assistant' && message.provider === 'openai'
+        ? {
+            chat_demo: {
+              provider: message.provider,
+              model: message.model,
+              reasoning_effort: message.reasoningEffort,
+            },
+          }
+        : {}),
     }
   })
   const current = getVisibleMessages(session).at(-1)

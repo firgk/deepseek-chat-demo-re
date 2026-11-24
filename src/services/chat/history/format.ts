@@ -1,3 +1,5 @@
+import type { ReasoningEffort } from '../../composerOptions.js'
+
 /**
  * 历史会话导出产物（deepseek_data-*.zip）的类型定义。
  *
@@ -62,6 +64,12 @@ export type ChatMessage = {
   inserted_at: Iso8601Utc
   /** 按发生顺序排列 */
   fragments: Fragment[]
+  /** chat-demo extension for OpenAI-compatible assistant replies. */
+  chat_demo?: {
+    provider: 'openai'
+    model: string
+    reasoning_effort: ReasoningEffort
+  }
 }
 
 /** 用户的提问 */

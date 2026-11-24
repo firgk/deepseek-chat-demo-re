@@ -16,6 +16,8 @@ import {
   importHistory,
 } from '../../services/chat/backup.js'
 import { useIsMobile } from '../../app/viewport.js'
+import { serverEnabled, useServerState } from '../../services/serverState.js'
+import { ServerSettings } from './ServerSettings.js'
 import { useChatStore } from '../../services/chat/store.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
@@ -61,6 +63,7 @@ const SettingsContent = () => {
   const [section, setSection] = useState(() => useSettingsDialog.getState().section)
   // 切换分组不丢失正在输入的 API Key 与导入状态
   const apiKeyEditor = useApiKeyEditor()
+  const openAI = useServerState((state) => state.mode) === 'openai'
   const historyImport = useHistoryImport()
   const historyDelete = useHistoryDelete()
   const replacingHistory = useChatStore((state) => state.importingHistory)
@@ -98,12 +101,13 @@ const SettingsContent = () => {
             <>
               <ThemeSetting />
               <LocaleSetting />
-              <TtsVoiceSetting />
+              {!openAI ? <TtsVoiceSetting /> : null}
               <LocationSetting />
             </>
           ) : (
             <>
-              <ApiKeyField editor={apiKeyEditor} />
+              {serverEnabled() ? <ServerSettings /> : null}
+              {!openAI ? <ApiKeyField editor={apiKeyEditor} /> : null}
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
               <SettingCell
@@ -121,7 +125,7 @@ const SettingsContent = () => {
                   </Button>
                 }
               />
-              {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
+              {isMobile && !openAI ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
             </>
           )}
         </div>

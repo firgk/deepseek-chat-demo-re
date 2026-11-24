@@ -7,6 +7,7 @@ import { getFileViewType, isImage } from '../../services/attachments.js'
 import { editMessage, retryUpload } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { UserMessage as UserMessageType } from '../../services/chat/types.js'
+import { useServerState } from '../../services/serverState.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
 import { ensureApiKey } from '../settings/settingsDialogState.js'
@@ -44,7 +45,8 @@ export const UserMessage = memo(function UserMessage({
   const [draft, setDraft] = useState(message.content)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isMobile = useIsMobile()
-  const canSend = !busy && (draft.trim() !== '' || message.files.length > 0)
+  const openAI = useServerState((state) => state.mode === 'openai')
+  const canSend = !busy && (draft.trim() !== '' || (!openAI && message.files.length > 0))
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current
@@ -75,7 +77,9 @@ export const UserMessage = memo(function UserMessage({
             <MessageFile
               key={file.id}
               file={file}
-              onRetry={retryUploadId ? () => retryUpload(sessionId, retryUploadId) : null}
+              onRetry={
+                retryUploadId && !openAI ? () => retryUpload(sessionId, retryUploadId) : null
+              }
             />
           ))}
         </div>

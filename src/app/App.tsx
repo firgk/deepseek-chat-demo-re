@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useTranslate } from '../i18n/index.js'
+import { useHistoryConflict } from '../services/chat/remoteHistory.js'
 import { useSettings } from '../services/settings.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
 import {
@@ -34,6 +35,7 @@ export const App = () => {
   const siderCollapsed = useSettings((state) => state.siderCollapsed) && !isMobile
   const ready = useChatStore((state) => state.ready)
   const initError = useChatStore((state) => state.initError)
+  const historyConflict = useHistoryConflict()
   const saveError = useChatStore((state) => Object.values(state.sessionSaveErrors).some(Boolean))
   const importingHistory = useChatStore((state) => state.importingHistory)
   const session = useChatStore((state) =>
@@ -78,7 +80,18 @@ export const App = () => {
       <div ref={frameRef} className={styles.frame}>
         {isMobile ? <MobileSider /> : siderCollapsed ? null : <Sider />}
         <main className={styles.main}>
-          {saveError ? (
+          {historyConflict ? (
+            <div className={styles.saveError} role="alert">
+              <span>
+                {locale === 'zh-CN'
+                  ? '对话历史已在另一台设备上更新。当前修改未同步，请刷新页面。'
+                  : 'Chat history was updated on another device. Your current changes did not sync. Reload the page.'}
+              </span>
+              <Button variant="outlined" size="s" onClick={() => location.reload()}>
+                {locale === 'zh-CN' ? '刷新' : 'Reload'}
+              </Button>
+            </div>
+          ) : saveError ? (
             <div className={styles.saveError} role="alert">
               <span>{t('sessionSaveFailed')}</span>
               <Button

@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
-import type { ChatModel, CreateMessageRequest } from '../api/types.js'
+import { streamOpenAI, toOpenAIMessages } from '../api/openai.js'
+import type { ChatModel, CreateMessageRequest, MessageStreamEvent } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import {
   cancelUpload,
@@ -10,6 +11,7 @@ import {
   uploadAttachment,
   useUploads,
 } from '../attachments.js'
+import { serverEnabled, useServerState } from '../serverState.js'
 import { useSettings } from '../settings.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import * as db from './db.js'
@@ -19,8 +21,10 @@ import {
   clearSentDraft,
   getDraft,
   prepareDraftMessage,
+  setDraftText,
 } from './drafts.js'
 import { createLatestReminder } from './latestReminder.js'
+import { useHistoryConflict } from './remoteHistory.js'
 import {
   applyEvent,
   canContinueReply,
@@ -94,6 +98,8 @@ export const useChatStore = create<ChatState>(() => ({
 }))
 
 const { getState: get, setState: set } = useChatStore
+
+const historyWriteBlocked = () => get().importingHistory || useHistoryConflict.getState()
 
 const sortSessions = (sessions: SessionSummary[]) =>
   [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)
@@ -189,7 +195,7 @@ const persist = (sessionId: string) => {
   const session = getSession(sessionId)
   if (session) {
     unsavedSessions.add(sessionId)
-    if (deletingSessions.has(sessionId)) {
+    if (deletingSessions.has(sessionId) || useHistoryConflict.getState()) {
       return
     }
     const epoch = historyEpoch
@@ -225,7 +231,7 @@ const persist = (sessionId: string) => {
 }
 
 export const retrySaveSessions = () => {
-  if (!get().importingHistory) {
+  if (!historyWriteBlocked()) {
     unsavedSessions.forEach(persist)
   }
 }
@@ -261,17 +267,30 @@ export const bindChatPersistence = () => {
 
 /** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
 const createReply = (): AssistantMessage => {
+  const { mode, model, effort, config, showSelectors } = useServerState.getState()
+  const initial = {
+    id: createId(),
+    role: 'assistant' as const,
+    createdAt: Date.now(),
+    status: 'pending' as const,
+    blocks: [],
+  }
+  if (mode === 'openai') {
+    return {
+      ...initial,
+      provider: 'openai',
+      model: (showSelectors && model) || config?.defaultModel || '',
+      reasoningEffort: showSelectors ? effort : 'default',
+      prefix: false,
+    }
+  }
   const { thinking, search } = useSettings.getState()
   return {
-    id: createId(),
-    role: 'assistant',
-    createdAt: Date.now(),
+    ...initial,
     model: MODEL,
     thinking,
     search,
     prefix: true,
-    status: 'pending',
-    blocks: [],
   }
 }
 
@@ -354,7 +373,8 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
       const session = sameSummary(settled, summary) ? settled : { ...settled, ...summary }
       touchSession(id)
       set((state) => ({ sessionCache: { ...state.sessionCache, [id]: session } }))
-      if (session !== stored) {
+      // A remote pending reply can still be streaming on another device.
+      if (session !== stored && !serverEnabled()) {
         persist(id)
       }
       trimSessionCache()
@@ -463,7 +483,7 @@ export const selectSession = (id: string) => {
 }
 
 export const renameSession = (id: string, title: string) => {
-  if (get().importingHistory || deletingSessions.has(id)) {
+  if (historyWriteBlocked() || deletingSessions.has(id)) {
     return
   }
   const controller = getStreamController(id)
@@ -473,12 +493,31 @@ export const renameSession = (id: string, title: string) => {
   if (getSession(id)) {
     updateSession(id, (session) => ({ ...session, title }))
     persist(id)
-  } else {
+    return
+  }
+  const updateTitle = () => {
+    if (getSession(id)) {
+      updateSession(id, (session) => ({ ...session, title }))
+      return
+    }
     set((state) => ({
       sessions: state.sessions.map((session) =>
         session.id === id ? { ...session, title } : session
       ),
     }))
+  }
+  if (serverEnabled()) {
+    const epoch = historyEpoch
+    void db
+      .renameSession(id, title)
+      .then(() => {
+        if (epoch === historyEpoch) {
+          updateTitle()
+        }
+      })
+      .catch(db.reportStorageError('rename session'))
+  } else {
+    updateTitle()
     void db.renameSession(id, title).catch(db.reportStorageError('rename session'))
   }
 }
@@ -494,7 +533,7 @@ export const removeSession = (id: string): Promise<boolean> => {
 }
 
 const removeSessionData = async (id: string): Promise<boolean> => {
-  if (get().importingHistory || deletingSessions.has(id)) {
+  if (historyWriteBlocked() || deletingSessions.has(id)) {
     return false
   }
   const epoch = historyEpoch
@@ -552,11 +591,16 @@ export const stopReply = (sessionId: string) => getStreamController(sessionId)?.
  * 同步接收成功才清空草稿，附件原件由会话接管；保存失败仍通过保存入口重试。
  */
 export const sendMessage = (targetSessionId: string | null) => {
-  if (get().importingHistory || !get().ready) {
+  if (historyWriteBlocked() || !get().ready) {
     return false
   }
-  const prepared = prepareDraftMessage(getDraft(targetSessionId), useUploads.getState().tasks)
-  if (!prepared) {
+  const draft = getDraft(targetSessionId)
+  const reply = createReply()
+  const openAI = reply.provider === 'openai'
+  const prepared = openAI
+    ? { text: draft.text.trim(), files: [] }
+    : prepareDraftMessage(draft, useUploads.getState().tasks)
+  if (!prepared || (openAI && !prepared.text)) {
     return false
   }
   const { text, files } = prepared
@@ -571,7 +615,7 @@ export const sendMessage = (targetSessionId: string | null) => {
   if (sessionId === null) {
     const session: Session = {
       id: createId(),
-      title: '',
+      title: openAI ? Array.from(text.replace(/\s+/g, ' ')).slice(0, 60).join('') : '',
       createdAt: now,
       updatedAt: now,
       messages: [],
@@ -606,7 +650,6 @@ export const sendMessage = (targetSessionId: string | null) => {
     })),
     createdAt: now,
   }
-  const reply = createReply()
   updateSession(sessionId, (session) => ({
     ...appendBranch(session, history.at(-1)?.id ?? null, [question, reply]),
     updatedAt: now,
@@ -618,14 +661,18 @@ export const sendMessage = (targetSessionId: string | null) => {
     ])
   }
   persist(sessionId)
-  clearSentDraft(targetSessionId)
+  if (openAI) {
+    setDraftText(targetSessionId, '')
+  } else {
+    clearSentDraft(targetSessionId)
+  }
   void streamReply(sessionId, reply, { history, question })
   return true
 }
 
 /** 重新生成当前路径上的回答：在原问题下新增版本，不覆盖旧回答和后续对话。 */
 export const regenerateReply = (sessionId: string, messageId?: string) => {
-  if (get().importingHistory || deletingSessions.has(sessionId)) {
+  if (historyWriteBlocked() || deletingSessions.has(sessionId)) {
     return
   }
   const session = getSession(sessionId)
@@ -641,6 +688,9 @@ export const regenerateReply = (sessionId: string, messageId?: string) => {
   }
   const history = path.slice(0, index - 1)
   const reply = createReply()
+  if (reply.provider === 'openai' && !question.content.trim()) {
+    return
+  }
   updateSession(sessionId, (s) => ({
     ...appendBranch(s, question.id, [reply]),
     updatedAt: Date.now(),
@@ -651,7 +701,7 @@ export const regenerateReply = (sessionId: string, messageId?: string) => {
 
 /** 编辑提问后新增同父版本，保留原文件；旧问题的所有回答与后续对话仍可切回。 */
 export const editMessage = (sessionId: string, messageId: string, content: string): boolean => {
-  if (get().importingHistory || deletingSessions.has(sessionId)) {
+  if (historyWriteBlocked() || deletingSessions.has(sessionId)) {
     return false
   }
   const session = getSession(sessionId)
@@ -662,7 +712,11 @@ export const editMessage = (sessionId: string, messageId: string, content: strin
   const index = path.findIndex((message) => message.id === messageId)
   const previous = path[index]
   const text = content.trim()
-  if (previous?.role !== 'user' || (!text && previous.files.length === 0)) {
+  const reply = createReply()
+  if (
+    previous?.role !== 'user' ||
+    (!text && (reply.provider === 'openai' || previous.files.length === 0))
+  ) {
     return false
   }
   const question: UserMessage = {
@@ -672,7 +726,6 @@ export const editMessage = (sessionId: string, messageId: string, content: strin
     files: previous.files,
     createdAt: Date.now(),
   }
-  const reply = createReply()
   updateSession(sessionId, (s) => ({
     ...appendBranch(s, path[index - 1]?.id ?? null, [question, reply]),
     updatedAt: Date.now(),
@@ -683,7 +736,7 @@ export const editMessage = (sessionId: string, messageId: string, content: strin
 }
 
 export const selectMessageVersion = (sessionId: string, messageId: string) => {
-  if (get().importingHistory || deletingSessions.has(sessionId)) {
+  if (historyWriteBlocked() || deletingSessions.has(sessionId)) {
     return
   }
   if (getStreamController(sessionId)) {
@@ -695,7 +748,11 @@ export const selectMessageVersion = (sessionId: string, messageId: string) => {
 
 /** 继续最后一条未完成的回答：保留原消息与开关，仅将新流的内容追加到原块之后。 */
 export const continueReply = (sessionId: string, messageId: string) => {
-  if (get().importingHistory || deletingSessions.has(sessionId)) {
+  if (
+    historyWriteBlocked() ||
+    deletingSessions.has(sessionId) ||
+    useServerState.getState().mode === 'openai'
+  ) {
     return
   }
   const session = getSession(sessionId)
@@ -708,6 +765,7 @@ export const continueReply = (sessionId: string, messageId: string) => {
   if (
     question?.role !== 'user' ||
     previous?.role !== 'assistant' ||
+    previous.provider === 'openai' ||
     previous.id !== messageId ||
     !canContinueReply(previous)
   ) {
@@ -733,7 +791,11 @@ export const continueReply = (sessionId: string, messageId: string) => {
 
 /** 附件补传失败后重试：保留原回答位置，重新补传并请求 */
 export const retryUpload = (sessionId: string, messageId: string) => {
-  if (get().importingHistory || deletingSessions.has(sessionId)) {
+  if (
+    historyWriteBlocked() ||
+    deletingSessions.has(sessionId) ||
+    useServerState.getState().mode === 'openai'
+  ) {
     return
   }
   const session = getSession(sessionId)
@@ -985,7 +1047,7 @@ const waitForRetry = (attempt: number, signal: AbortSignal) =>
  */
 const streamReply = async (sessionId: string, initial: AssistantMessage, request: Request) => {
   const controller = new AbortController()
-  if (!getSession(sessionId)?.title) {
+  if (!initial.provider && !getSession(sessionId)?.title) {
     titleRequests.add(controller)
   }
   set((state) => ({ streaming: { ...state.streaming, [sessionId]: controller } }))
@@ -1001,38 +1063,50 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   try {
     for (let attempt = 0; ; attempt += 1) {
       /** 附件补齐前出错属于上传失败，请求还没有发出 */
-      let preparing = true
+      let preparing = !initial.provider
       let receivedContent = false
       try {
-        const prepared = await prepareFiles(sessionId, request, controller.signal)
-        preparing = false
-        // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
-        const latestReminder = prepared.prefix
-          ? prepared.prefix.latestReminder
-          : createLatestReminder(useSettings.getState())
-        reply = { ...reply, latestReminder }
-        updateReply(sessionId, reply)
-        persist(sessionId)
-        const messages = toRequestMessages(
-          prepared.history,
-          prepared.question,
-          prepared.prefix,
-          initial.thinking ?? false,
-          latestReminder
-        )
-        const events = streamMessage(
-          useSettings.getState().apiKey ?? '',
-          {
-            model: initial.model ?? MODEL,
-            system: SYSTEM_PROMPT,
-            messages,
-            thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
-            safety_check: SAFETY_CHECK,
-            tools: serverTools(initial.search ?? false),
-            ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
-          },
-          controller.signal
-        )
+        let events: AsyncGenerator<MessageStreamEvent>
+        if (initial.provider === 'openai') {
+          events = streamOpenAI(
+            {
+              model: initial.model,
+              messages: toOpenAIMessages(request.history, request.question),
+              effort: initial.reasoningEffort,
+            },
+            controller.signal
+          )
+        } else {
+          const prepared = await prepareFiles(sessionId, request, controller.signal)
+          preparing = false
+          // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
+          const latestReminder = prepared.prefix
+            ? prepared.prefix.latestReminder
+            : createLatestReminder(useSettings.getState())
+          reply = { ...reply, latestReminder }
+          updateReply(sessionId, reply)
+          persist(sessionId)
+          const messages = toRequestMessages(
+            prepared.history,
+            prepared.question,
+            prepared.prefix,
+            initial.thinking ?? false,
+            latestReminder
+          )
+          events = streamMessage(
+            useSettings.getState().apiKey ?? '',
+            {
+              model: initial.model ?? MODEL,
+              system: SYSTEM_PROMPT,
+              messages,
+              thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
+              safety_check: SAFETY_CHECK,
+              tools: serverTools(initial.search ?? false),
+              ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
+            },
+            controller.signal
+          )
+        }
         const blockIndexes = new Map<number, number>()
         for await (const event of events) {
           receivedContent ||= event.type === 'content_block_start'
@@ -1047,6 +1121,9 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             const title = event.delta.title.trim()
             updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
             titleRequests.delete(controller)
+          }
+          if (reply.provider === 'openai' && event.type === 'message_start') {
+            reply = { ...reply, model: event.message.model }
           }
           reply = applyEvent(reply, event, Date.now(), blockIndexes)
           if (document.visibilityState === 'hidden') {
@@ -1073,6 +1150,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         }
         // 附件失效：重新补传后重发。收到过内容块（含丢弃的客户端工具）后不自动重发。
         if (
+          !initial.provider &&
           attempt < FILE_RETRY_LIMIT &&
           !receivedContent &&
           reuploadInvalidatedFiles(sessionId, request, error)

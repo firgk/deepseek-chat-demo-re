@@ -1,0 +1,27 @@
+.page {
+  display: grid;
+  min-height: 100dvh;
+  padding: 24px;
+  place-items: center;
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 320px);
+}
+
+.form h1 {
+  margin: 0 0 12px;
+  font-size: 1.5rem;
+}
+
+.form input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+}

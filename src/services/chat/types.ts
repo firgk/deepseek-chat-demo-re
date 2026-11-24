@@ -8,6 +8,7 @@ import type {
   StopReason,
   TextCitation,
 } from '../api/types.js'
+import type { ReasoningEffort } from '../composerOptions.js'
 
 /**
  * 消息附件。id 是本地标识（IndexedDB files 表的主键，原件按它存储，所有引用同一 id 的消息共用一份），
@@ -73,37 +74,49 @@ export type ReplyBlock = ThinkingPart | TextPart | ServerToolBlock
  */
 export type ReplyStatus = 'pending' | 'streaming' | 'done' | 'stopped' | 'error'
 
-export type AssistantMessage = MessageBranch & {
-  id: string
-  role: 'assistant'
-  createdAt: number
-  /** 未记录模型时为 null，续写使用当前默认模型。 */
-  model: ChatModel | null
-  /** 请求时是否开启深度思考 */
-  thinking?: boolean
-  /** 请求时是否声明 deepseek_web_search；关闭时仍声明 deepseek_read_url */
-  search?: boolean
-  /** 本轮请求的系统信息快照；各回答版本独立保存，续写沿用。历史消息中缺省的快照保持为空。 */
-  latestReminder?: string
-  /** 是否允许作为续写前缀；仍需满足回复状态与内容限制。 */
-  prefix: boolean
-  status: ReplyStatus
-  /** 可识别的内容块按接收顺序排列；续写产生的块追加在已有块之后 */
-  blocks: ReplyBlock[]
-  stopReason?: StopReason
-  stopDetails?: StopDetails
-  /** 最近一次请求的用量，续写后更新 */
-  usage?: MessageUsage
-  error?: {
-    /** upload：发送前补传附件失败，请求没有发出 */
-    kind: ApiErrorKind | 'upload'
-    message: string
-    status?: number
-    localMessage?: TranslationMessage
-    /** 仅 upload：重新上传是否可能成功（网络、限流、服务端繁忙）；过大、格式不支持为 false */
-    retryable?: boolean
+type ReplyProvider =
+  | {
+      /** DeepSeek and existing records omit the provider. */
+      provider?: undefined
+      model: ChatModel | null
+      reasoningEffort?: undefined
+    }
+  | {
+      provider: 'openai'
+      model: string
+      reasoningEffort: ReasoningEffort
+    }
+
+export type AssistantMessage = MessageBranch &
+  ReplyProvider & {
+    id: string
+    role: 'assistant'
+    createdAt: number
+    /** 请求时是否开启深度思考 */
+    thinking?: boolean
+    /** 请求时是否声明 deepseek_web_search；关闭时仍声明 deepseek_read_url */
+    search?: boolean
+    /** 本轮请求的系统信息快照；各回答版本独立保存，续写沿用。历史消息中缺省的快照保持为空。 */
+    latestReminder?: string
+    /** 是否允许作为续写前缀；仍需满足回复状态与内容限制。 */
+    prefix: boolean
+    status: ReplyStatus
+    /** 可识别的内容块按接收顺序排列；续写产生的块追加在已有块之后 */
+    blocks: ReplyBlock[]
+    stopReason?: StopReason
+    stopDetails?: StopDetails
+    /** 最近一次请求的用量，续写后更新 */
+    usage?: MessageUsage
+    error?: {
+      /** upload：发送前补传附件失败，请求没有发出 */
+      kind: ApiErrorKind | 'upload'
+      message: string
+      status?: number
+      localMessage?: TranslationMessage
+      /** 仅 upload：重新上传是否可能成功（网络、限流、服务端繁忙）；过大、格式不支持为 false */
+      retryable?: boolean
+    }
   }
-}
 
 export type Message = UserMessage | AssistantMessage
 

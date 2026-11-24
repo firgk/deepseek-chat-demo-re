@@ -216,7 +216,13 @@ const toAssistant = (message: ChatMessage): AssistantMessage => {
     id,
     role: 'assistant',
     createdAt: time(message.inserted_at),
-    model: null,
+    ...(message.chat_demo
+      ? {
+          provider: message.chat_demo.provider,
+          model: message.chat_demo.model,
+          reasoningEffort: message.chat_demo.reasoning_effort,
+        }
+      : { model: null }),
     thinking: message.thinking_enabled,
     search: message.search_enabled,
     prefix: false,

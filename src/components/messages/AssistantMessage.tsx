@@ -1,3 +1,6 @@
+import { useServerState } from '../../services/serverState.js'
+import { useSettings } from '../../services/settings.js'
+import { effortLabels } from '../chatInput/ComposerOptions.js'
 import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
 import { memo } from 'react'
@@ -44,6 +47,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   onSelectVersion: SelectMessageVersion
 }) {
   const t = useTranslate()
+  const openAI = useServerState((state) => state.mode) === 'openai'
+  const zh = useSettings((state) => state.locale) === 'zh-CN'
   const view = useReplyView(message, streaming)
   const panelEntry = useSearchPanel((state) => state.entry)
   const notice = streaming ? null : describeReply(message)
@@ -138,12 +143,20 @@ export const AssistantMessage = memo(function AssistantMessage({
           </span>
         </div>
       ) : null}
+      {message.provider === 'openai' && message.model ? (
+        <small className={styles.modelInfo}>
+          {message.model}
+          {message.reasoningEffort
+            ? ` · ${effortLabels[message.reasoningEffort]?.[zh ? 0 : 1] ?? message.reasoningEffort}`
+            : ''}
+        </small>
+      ) : null}
       {streaming ? null : (
         <div className={styles.bottom}>
           <BranchSwitcher versions={versions} disabled={busy} onSelect={onSelectVersion} />
           <div className={clsx(styles.actions, isLast && styles.alwaysShow)}>
             {copyText ? <CopyButton text={copyText} /> : null}
-            {responseText && !refused ? (
+            {!openAI && responseText && !refused ? (
               <ReadAloudButton messageId={message.id} text={responseText} />
             ) : null}
             <IconButton
@@ -157,7 +170,7 @@ export const AssistantMessage = memo(function AssistantMessage({
               }}
             />
           </div>
-          {isLast && canContinueReply(message) ? (
+          {!openAI && message.provider !== 'openai' && isLast && canContinueReply(message) ? (
             <Button
               variant="outlined"
               size="s"

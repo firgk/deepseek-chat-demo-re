@@ -1,0 +1,7 @@
+# Copy to .config and set a site password before starting the server.
+SITE_PASSWORD=
+
+# Optional OpenAI-compatible endpoint, for example https://api.openai.com/v1.
+OPENAI_BASE_URL=
+OPENAI_API_KEY=
+OPENAI_DEFAULT_MODEL=

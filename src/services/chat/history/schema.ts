@@ -1,3 +1,4 @@
+import { effortOptions } from '../../composerOptions.js'
 import { BackupError, fail } from './errors.js'
 import {
   EXPORT_FORMAT_VERSION,
@@ -197,12 +198,22 @@ const fragment: Read<Fragment | null> = (value) => {
   }
 }
 
+const replyMetadata: Read<NonNullable<ChatMessage['chat_demo']>> = (value) => {
+  const item = record(value)
+  return {
+    provider: oneOf('openai')(item.provider),
+    model: string(item.model),
+    reasoning_effort: oneOf(...effortOptions)(item.reasoning_effort),
+  }
+}
+
 const message: Read<ChatMessage> = (value) => {
   const item = record(value)
+  const role = oneOf('USER', 'ASSISTANT')(item.role)
   return {
     id: count(item.id),
     parent_id: nullable(count)(item.parent_id),
-    role: oneOf('USER', 'ASSISTANT')(item.role),
+    role,
     status: oneOf(
       'WIP',
       'FINISHED',
@@ -217,6 +228,9 @@ const message: Read<ChatMessage> = (value) => {
     accumulated_token_usage: count(item.accumulated_token_usage),
     inserted_at: time(item.inserted_at),
     fragments: list(fragment)(item.fragments).filter((item): item is Fragment => item !== null),
+    ...(role === 'ASSISTANT' && 'chat_demo' in item
+      ? { chat_demo: replyMetadata(item.chat_demo) }
+      : {}),
   }
 }
 

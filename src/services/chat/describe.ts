@@ -31,6 +31,11 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     if (kind === 'network') {
       return { text: translate('commonNetworkErrorToast') }
     }
+    if (reply.provider === 'openai') {
+      return {
+        text: status === 429 ? translate('replyRateLimited') : message,
+      }
+    }
     switch (classifyStatus(status)) {
       case 'unauthorized':
         return { text: translate('replyInvalidApiKey'), action: 'apiKey' }

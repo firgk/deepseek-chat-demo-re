@@ -137,3 +137,8 @@
     --search-row-site-logo-color: var(--dsw-alias-interactive-bg-hover);
   }
 }
+
+.modelInfo {
+  font-size: 12px;
+  color: var(--dsw-alias-label-caption);
+}
