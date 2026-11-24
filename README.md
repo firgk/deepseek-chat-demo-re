@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 A chat demo powered by the DeepSeek API. Run it as a static site or use the Node.js server for sign-in, synced history, and OpenAI-compatible endpoints.
 
-You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Enter your API key in Settings before your first chat.
+Try the [static demo](https://deepseek-ai.github.io/chat-demo/) or download an archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) and open `index.html`. The static version takes its API key from Settings. To use password sign-in and synced history, start the server as described below.
 
 ## Getting started
 
@@ -29,7 +29,7 @@ The output is written to `dist/`. Deploy it to a static web server or open `dist
 
 ## Run with history sync
 
-Use Node.js 24 and pnpm. From the project root:
+The server version requires Node.js 24 and pnpm. From the project root:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -37,18 +37,18 @@ cp .config_example .config
 chmod 600 .config
 ```
 
-Set `SITE_PASSWORD` in `.config`. To use an OpenAI-compatible endpoint, set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_DEFAULT_MODEL`. Include the endpoint's path prefix in the base URL, for example `https://api.openai.com/v1`.
+Set `SITE_PASSWORD` in `.config`. To use an OpenAI-compatible endpoint, set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_DEFAULT_MODEL`. Include the provider path prefix in the base URL, for example `https://api.openai.com/v1`. Git ignores the real `.config` file.
 
 ```sh
 pnpm build
 pnpm start
 ```
 
-Open http://127.0.0.1:3000 and sign in with the site password. The default listener is `127.0.0.1:3000`. Override it with the `HOST` and `PORT` environment variables. For access from other devices, use an HTTPS reverse proxy that sets `X-Forwarded-Proto: https`. Keep `.config` and `.data/` on persistent storage. The SQLite database at `.data/chat-demo.sqlite` holds conversations and quick prompts. Sign in again after a server restart.
+Open http://127.0.0.1:3000 and sign in with the site password. By default, the server listens on the local machine only. To allow other devices on the LAN, start it with `HOST=0.0.0.0 PORT=3000 pnpm start`. For public access, put an HTTPS reverse proxy in front of the server and pass `X-Forwarded-Proto: https`. Keep `.config` and `.data/` on persistent storage. The SQLite database at `.data/chat-demo.sqlite` holds conversations and quick prompts. Login sessions stay in server memory, so sign in again after a server restart.
 
 In Settings → Data, you can edit the endpoint and site password, fetch models, and configure the model and reasoning selectors. New chats inherit the current selections. Quick prompts insert at the caret. Custom quick prompts sync across signed-in devices.
 
-Conversations save automatically. Reload when notified of a version conflict to fetch the latest server history. Attachment originals stay in their browser. Existing histories migrate from the same site origin when sync starts. If you switch origins, export a ZIP on the old site and import it on the new one.
+In server mode, conversations save automatically and load when you sign in, reopen the site, or reload. When another device updates the same conversation first, reload to fetch the latest server copy. Attachment descriptions sync, while file originals stay in the browser that uploaded them. Existing conversations from the same site origin migrate to SQLite on first use. IndexedDB is isolated by origin, so export a ZIP from the old site and import it at the new origin when moving between sites. Static mode continues to store history only in the current browser.
 
 ## Features
 
@@ -62,9 +62,9 @@ Conversations save automatically. Reload when notified of a version conflict to 
 
 In static mode, your API key and settings are stored in the browser's localStorage. Conversations and original attachments are stored in IndexedDB. Local data is isolated by browser profile and site origin. Sending messages, uploading attachments, and using speech features sends the relevant content to the configured API service.
 
-History import and export in Settings use ZIP archives. After confirmation and successful validation, importing replaces all local conversations and attachments. Exports include conversations and locally available original images, but exclude API keys, settings, and original non-image attachments. See the [history import/export documentation (Chinese)](src/services/chat/history/README.md) for the archive format and preservation details.
+History import and export in Settings use ZIP archives. After confirmation and validation, import replaces all conversations in the current mode. In static mode this replaces local history. In server mode it replaces the shared server history too. Exports include conversations and locally available original images, but exclude API keys, site configuration, and original non-image attachments. See the [history import/export documentation (Chinese)](src/services/chat/history/README.md) for the archive format and preservation details.
 
-Settings → Data → Delete all chats clears all local conversations, original attachments, and unsent drafts after confirmation. It stops ongoing replies and returns to a new chat. Your API key and settings are preserved; files already uploaded to the API service are not deleted.
+Settings → Data → Delete all chats clears conversations and local attachment originals in the current mode after confirmation. Server mode also clears shared server history. Ongoing replies stop and the app returns to a new chat. Browser API keys and settings are preserved. Files already uploaded to the API service are not deleted.
 
 ## Development
 

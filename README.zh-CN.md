@@ -4,7 +4,7 @@
 
 基于 DeepSeek API 的聊天示例。可以作为静态网页运行，也可以用 Node.js 启动带登录、对话同步和 OpenAI 兼容端点的服务版。
 
-点击 [在线体验](https://deepseek-ai.github.io/chat-demo/) 即可使用，也可以前往 [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) 下载压缩包，解压后双击 `index.html` 在本地使用，无需安装或构建。首次使用时，请在设置中填写 API Key。
+可以通过[在线体验](https://deepseek-ai.github.io/chat-demo/)试用静态版，也可以从 [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) 下载压缩包，解压后双击 `index.html` 使用。静态版的 API Key 在设置中填写。若要使用密码登录和多设备同步，请按下文启动服务版。
 
 ## 运行
 
@@ -29,7 +29,7 @@ pnpm build
 
 ## 启动同步版
 
-需要 Node.js 24 和 pnpm。在项目根目录执行：
+服务版需要 Node.js 24 和 pnpm。在项目根目录执行：
 
 ```sh
 pnpm install --frozen-lockfile
@@ -37,18 +37,18 @@ cp .config_example .config
 chmod 600 .config
 ```
 
-在 `.config` 填写 `SITE_PASSWORD`。如需连接 OpenAI 兼容服务，再填写 `OPENAI_BASE_URL`、`OPENAI_API_KEY` 和 `OPENAI_DEFAULT_MODEL`。Base URL 保留网关要求的路径前缀，例如 `https://api.openai.com/v1`。
+在 `.config` 设置 `SITE_PASSWORD`。如需连接 OpenAI 兼容服务，填写 `OPENAI_BASE_URL`、`OPENAI_API_KEY` 和 `OPENAI_DEFAULT_MODEL`。Base URL 要包含服务商要求的路径前缀，例如 `https://api.openai.com/v1`。实际使用的 `.config` 不会提交到 Git。
 
 ```sh
 pnpm build
 pnpm start
 ```
 
-打开 http://127.0.0.1:3000 并输入站点密码。服务默认监听 `127.0.0.1:3000`，可以用环境变量 `HOST` 和 `PORT` 调整。多设备访问时，在服务前配置 HTTPS 反向代理，传递 `X-Forwarded-Proto: https`。持久保留项目根目录的 `.config` 和 `.data/`。SQLite 对话和快捷预设存于 `.data/chat-demo.sqlite`。登录在当前服务进程内有效，重启后需要重新登录。
+打开 http://127.0.0.1:3000 并输入站点密码。服务默认只监听本机。要让局域网内的其他设备访问，可用 `HOST=0.0.0.0 PORT=3000 pnpm start` 监听所有网卡。公网部署应在服务前配置 HTTPS 反向代理，并传递 `X-Forwarded-Proto: https`。将项目根目录下的 `.config` 和 `.data/` 放在持久化磁盘上。SQLite 对话和快捷预设保存在 `.data/chat-demo.sqlite`。登录会话存在服务内存中，服务重启后需要重新登录。
 
 服务版的「设置 → 数据管理」可修改站点密码和端点，保存后写回 `.config`。模型列表由配置的端点提供，默认模型 ID 也可手动填写。可开启输入框旁的模型与思考深度选择器，新对话会沿用当前选择。「快捷输入」把预设插到光标处。登录后可同步自定义预设。
 
-对话随操作自动保存，打开或刷新页面时自动加载。遇到版本冲突时，请刷新页面取回服务端版本。附件原件留在各自的浏览器，浏览器历史仍按站点源隔离。同一站点源的旧会话会在首次同步时迁移。切换到不同地址时，可先从旧站点导出 ZIP 再导入同步版。
+服务版的对话会在操作时自动保存，登录、重新打开或刷新页面时自动加载。若另一台设备先更新了同一会话，页面会提示刷新，刷新后加载服务器最新版本。附件原件留在上传它们的浏览器，服务器同步附件描述，不同步文件原件。服务版首次启动会将当前站点源 IndexedDB 中服务器尚未保存的会话迁移到 SQLite。浏览器的 IndexedDB 按站点源隔离，从不同站点切换时，可在旧站点导出 ZIP，再在新站点导入。静态版继续只在当前浏览器本地保存历史。
 
 ## 功能
 
@@ -62,9 +62,9 @@ pnpm start
 
 静态版的 API Key 和设置保存在浏览器 localStorage，会话及附件原件保存在 IndexedDB，本地数据按浏览器用户配置和站点源（origin）隔离。发送对话、上传附件和使用语音功能时，相应内容会提交给配置的 API 服务。
 
-设置中的历史导入导出使用 ZIP 格式。导入会在确认并校验成功后替换全部本地会话和附件；导出包含会话与本地可用的图片原件，不包含 API Key、设置或非图片附件原件。格式与保留范围见[历史导入导出](src/services/chat/history/README.md)。
+设置中的历史导入导出使用 ZIP 格式。确认并通过校验后，导入会替换当前模式中的全部会话。静态版替换本地记录，服务版同时替换服务器历史。导出包含会话和本地可用的图片原件，不包含 API Key、站点配置或非图片附件原件。格式与保留范围见[历史导入导出](src/services/chat/history/README.md)。
 
-设置 → 数据管理 → 删除所有对话，会在确认后清空全部本地会话、附件原件和未发送的草稿，停止正在生成的回复并回到新对话。API Key 和其他设置保留，已上传到 API 服务的文件不受影响。
+设置 → 数据管理 → 删除所有对话，会在确认后清空当前模式的会话和附件原件，停止正在生成的回复并返回新对话。服务版也会同步清除服务器历史。浏览器中的 API Key、站点配置和其他设置保留，已上传到 API 服务的文件不受影响。
 
 ## 开发
 
