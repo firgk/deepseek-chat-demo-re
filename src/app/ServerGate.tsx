@@ -60,7 +60,10 @@ export const ServerGate = ({ children }: { children: ReactNode }) => {
               })
           }}
         >
-          <h1>{zh ? '登录 DeepSeek Chat' : 'Sign in to DeepSeek Chat'}</h1>
+          <h1>
+            <img src="./logo.svg" width={48} height={48} alt="" />
+            <span>deepseek-chat-demo-re</span>
+          </h1>
           <label htmlFor="site-password">{zh ? '站点密码' : 'Site password'}</label>
           <input
             ref={password}

@@ -134,6 +134,8 @@ test('updates config atomically, redacts secrets, and rotates the login password
   assert.deepEqual(await (await request('/api/config')).json(), {
     baseUrl: 'https://example.org/v1',
     defaultModel: 'test-model',
+    defaultReasoningEffort: 'default',
+    modelPresets: [],
     hasApiKey: true,
   })
   const update = {
@@ -340,9 +342,15 @@ test('requires entering or clearing the old key before it can be sent to a diffe
   assert.equal((await (await request('/api/config')).json()).baseUrl, 'https://old.example/v1')
   assert.deepEqual(await (await put({ ...provider, apiKey: '' })).json(), {
     ...provider,
+    defaultReasoningEffort: 'default',
+    modelPresets: [],
     hasApiKey: false,
   })
   assert.match(await readFile(configPath, 'utf8'), /# Custom note\nOTHER=value/)
+  const another = { ...provider, baseUrl: 'https://another.example/v1' }
+  assert.equal((await put(another)).status, 400)
+  assert.equal((await put({ ...another, apiKey: 'new-provider-key' })).status, 200)
+  assert.match(await readFile(configPath, 'utf8'), /OPENAI_API_KEY=new-provider-key/)
 })
 
 test('suggests changing reasoning effort when a provider rejects a request that specifies it', async (t) => {
@@ -382,7 +390,7 @@ test('reloads settings, versioned history, and prompt presets when the server re
     (
       await request('/api/config', {
         method: 'PUT',
-        body: { baseUrl: '', defaultModel: 'changed' },
+        body: { baseUrl: '', defaultModel: 'changed', defaultReasoningEffort: 'xhigh' },
       })
     ).status,
     200
@@ -394,6 +402,8 @@ test('reloads settings, versioned history, and prompt presets when the server re
   assert.deepEqual(await (await afterRestart('/api/config')).json(), {
     baseUrl: '',
     defaultModel: 'changed',
+    defaultReasoningEffort: 'xhigh',
+    modelPresets: [],
     hasApiKey: true,
   })
   assert.deepEqual(await (await afterRestart('/api/sessions/persisted')).json(), {
@@ -414,4 +424,101 @@ test('accepts archived session IDs when migrating local history', async (t) => {
     200
   )
   assert.deepEqual(await (await request(path)).json(), { version: 1, session })
+})
+
+test('validates saved default reasoning effort and preserves it across legacy config updates', async (t) => {
+  const { signIn, configPath } = await fixture(t)
+  const request = await signIn()
+  const put = (body) => request('/api/config', { method: 'PUT', body })
+  const base = { baseUrl: '', defaultModel: 'm' }
+  assert.equal((await put({ ...base, defaultReasoningEffort: 'invalid' })).status, 400)
+  assert.equal((await put({ ...base, defaultReasoningEffort: 'high' })).status, 200)
+  assert.match(await readFile(configPath, 'utf8'), /OPENAI_DEFAULT_REASONING_EFFORT=high/)
+  const result = await (await put(base)).json()
+  assert.equal(result.defaultReasoningEffort, 'high')
+})
+
+test('composer saves model defaults without changing endpoint or credentials', async (t) => {
+  const { signIn, configPath } = await fixture(t, 'https://example.org/v1')
+  const request = await signIn()
+  const before = await (await request('/api/config')).json()
+  const response = await request('/api/config', {
+    method: 'PUT',
+    body: { defaultModel: 'composer-model', defaultReasoningEffort: 'high' },
+  })
+  assert.equal(response.status, 200)
+  const after = await response.json()
+  assert.deepEqual(after, {
+    ...before,
+    defaultModel: 'composer-model',
+    defaultReasoningEffort: 'high',
+  })
+  const config = await readFile(configPath, 'utf8')
+  assert.match(config, /OPENAI_DEFAULT_MODEL=composer-model/)
+  assert.match(config, /OPENAI_DEFAULT_REASONING_EFFORT=high/)
+  const preserved = await request('/api/config', {
+    method: 'PUT',
+    body: { baseUrl: before.baseUrl },
+  })
+  assert.deepEqual(await preserved.json(), after)
+})
+
+test('model presets support multiple efforts, deduplication, deletion and server restart', async (t) => {
+  const { signIn, restart } = await fixture(t, 'https://example.org/v1')
+  const request = await signIn()
+  const put = (body) => request('/api/config', { method: 'PUT', body })
+  const a = { model: 'alpha', effort: 'high', searchStrength: 'off' }
+  const b = { model: 'alpha', effort: 'high', searchStrength: 'high' }
+  assert.deepEqual(
+    (await (await put({ addModelPreset: { model: a.model, effort: a.effort } })).json())
+      .modelPresets,
+    [a]
+  )
+  assert.deepEqual((await (await put({ addModelPreset: b })).json()).modelPresets, [a, b])
+  assert.deepEqual((await (await put({ addModelPreset: a })).json()).modelPresets, [a, b])
+  assert.equal((await put({ addModelPreset: { model: 'x', effort: 'invalid' } })).status, 400)
+  await restart()
+  const afterRestart = await signIn()
+  assert.deepEqual((await (await afterRestart('/api/config')).json()).modelPresets, [a, b])
+  const removed = await afterRestart('/api/config', {
+    method: 'PUT',
+    body: { removeModelPreset: a },
+  })
+  assert.deepEqual((await removed.json()).modelPresets, [b])
+})
+
+test('forwards inline image data to the configured model and rejects external URLs and document parts', async (t) => {
+  const received = []
+  const upstream = createServer(async (request, response) => {
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    received.push(JSON.parse(Buffer.concat(chunks).toString()))
+    response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+    response.end('data: [DONE]\n\n')
+  })
+  t.after(
+    () =>
+      new Promise((resolve) => {
+        upstream.close(resolve)
+        upstream.closeAllConnections()
+      })
+  )
+  const request = await (await fixture(t, (await listen(upstream)) + '/v1')).signIn()
+  const send = (messages) =>
+    request('/api/chat/completions', { method: 'POST', body: { messages } })
+  const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,aW1hZ2U=' } }
+  const messages = [{ role: 'user', content: [{ type: 'text', text: 'Describe this' }, image] }]
+  const result = await send(messages)
+  assert.equal(result.status, 200)
+  assert.match(await result.text(), /\[DONE\]/)
+  assert.deepEqual(received[0].messages, messages)
+  for (const part of [
+    { type: 'image_url', image_url: { url: 'http://127.0.0.1/private' } },
+    { type: 'file', file: { file_id: 'foo' } },
+  ]) {
+    const invalid = await send([{ role: 'user', content: [part] }])
+    assert.equal(invalid.status, 400)
+    await invalid.text()
+  }
+  assert.equal(received.length, 1)
 })

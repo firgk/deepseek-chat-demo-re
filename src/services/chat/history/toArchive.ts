@@ -259,6 +259,9 @@ export const toSessionFile = (original: Session, exportImage: ExportImage): Sess
               provider: message.provider,
               model: message.model,
               reasoning_effort: message.reasoningEffort,
+              ...(message.searchStrength === undefined
+                ? {}
+                : { search_strength: message.searchStrength }),
             },
           }
         : {}),

@@ -1,99 +1,200 @@
-# chat-demo
+# deepseek-chat-demo-re
 
 English | [简体中文](README.zh-CN.md)
 
-A chat demo powered by the DeepSeek API. Run it as a static site or use the Node.js server for sign-in, synced history, and OpenAI-compatible endpoints.
+<img src="src/logo.svg" width="64" alt="deepseek-chat-demo-re" />
 
-Try the [static demo](https://deepseek-ai.github.io/chat-demo/) or download an archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) and open `index.html`. The static version takes its API key from Settings. To use password sign-in and synced history, start the server as described below.
+A self-hosted chat client extended from the DeepSeek chat demo, with native DeepSeek and OpenAI-compatible APIs, model presets, web search, image input, and synchronized chat history.
 
-## Getting started
+## Features
 
-Install Node.js 22.12+ and pnpm, then run:
+- **Models:** fetch model lists, fuzzy-search by ordered characters, or enter a model ID manually.
+- **Presets:** save model, reasoning effort, and search strength together; confirm before deletion.
+- **Search:** four strength levels, live reasoning and search progress, and sources.
+- **Images:** select, paste, or drop images for vision-capable models.
+- **Chat:** streaming, stop, edit, regenerate, message branches, and quick prompts.
+- **Self-hosting:** password sign-in, server-side OpenAI credentials, and SQLite history sync.
+- **Interface:** English and Chinese, light and dark themes, two-row mobile toolbar and consistent dropdowns.
+- **Rendering:** Markdown, syntax highlighting, KaTeX, Mermaid, and ZIP history import/export.
+
+### API modes
+
+| Feature                  | DeepSeek                   | OpenAI-compatible                |
+| ------------------------ | -------------------------- | -------------------------------- |
+| Deployment               | Static / server            | Server                           |
+| Protocol                 | Anthropic Messages / Files | Chat Completions                 |
+| Model                    | deepseek-flash             | Configurable                     |
+| Reasoning                | Native toggle              | Effort and returned reasoning    |
+| Search                   | Native search              | Firecrawl function calling       |
+| Images                   | Files API                  | Base64 image_url                 |
+| PDF and other documents  | Supported                  | Not yet                          |
+| Web page reading         | Supported                  | fetch_url                        |
+| Voice input / read aloud | Supported                  | Not yet                          |
+| Titles                   | API-generated              | Prompt excerpt or image filename |
+| Continue generation      | When eligible              | Not yet                          |
+
+Availability depends on the API and model.
+
+## Quick start (recommended server mode)
+
+Requirements: Node.js 24 and pnpm.
 
 ```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
-pnpm install
-pnpm dev
-```
-
-Open http://localhost:8090.
-
-To build the static site:
-
-```sh
-pnpm build
-```
-
-The output is written to `dist/`. Deploy it to a static web server or open `dist/index.html` directly. Opening the file directly requires browser support for storage on `file://` pages and an API service that permits their cross-origin requests.
-
-## Run with history sync
-
-The server version requires Node.js 24 and pnpm. From the project root:
-
-```sh
+git clone https://github.com/firgk/deepseek-chat-demo-re.git
+cd deepseek-chat-demo-re
 pnpm install --frozen-lockfile
-cp .config_example .config
+cp -n .config_example .config
 chmod 600 .config
 ```
 
-Set `SITE_PASSWORD` in `.config`. To use an OpenAI-compatible endpoint, set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_DEFAULT_MODEL`. Include the provider path prefix in the base URL, for example `https://api.openai.com/v1`. Git ignores the real `.config` file.
+Edit `.config`:
+
+```ini
+SITE_PASSWORD=replace-with-your-password
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=replace-with-your-api-key
+OPENAI_DEFAULT_MODEL=your-model-id
+OPENAI_DEFAULT_REASONING_EFFORT=default
+OPENAI_MODEL_PRESETS=[]
+```
+
+For native DeepSeek only, leave the OpenAI fields empty and enter a DeepSeek API key in the web settings.
 
 ```sh
 pnpm build
 pnpm start
 ```
 
-Open http://127.0.0.1:3000 and sign in with the site password. By default, the server listens on the local machine only. To allow other devices on the LAN, start it with `HOST=0.0.0.0 PORT=3000 pnpm start`. For public access, put an HTTPS reverse proxy in front of the server and pass `X-Forwarded-Proto: https`. Keep `.config` and `.data/` on persistent storage. The SQLite database at `.data/chat-demo.sqlite` holds conversations and quick prompts. Login sessions stay in server memory, so sign in again after a server restart.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000) and sign in.
 
-In Settings → Data, you can edit the endpoint and site password, fetch models, and configure the model and reasoning selectors. New chats inherit the current selections. Quick prompts insert at the caret. Custom quick prompts sync across signed-in devices.
+## Configuration
 
-In server mode, conversations save automatically and load when you sign in, reopen the site, or reload. When another device updates the same conversation first, reload to fetch the latest server copy. Attachment descriptions sync, while file originals stay in the browser that uploaded them. Existing conversations from the same site origin migrate to SQLite on first use. IndexedDB is isolated by origin, so export a ZIP from the old site and import it at the new origin when moving between sites. Static mode continues to store history only in the current browser.
+| Setting                         | Description                                                        |
+| ------------------------------- | ------------------------------------------------------------------ |
+| SITE_PASSWORD                   | Required site password                                             |
+| OPENAI_BASE_URL                 | API base URL, including the required prefix (e.g. /v1)             |
+| OPENAI_API_KEY                  | Server-side API key; may be empty if authentication is unnecessary |
+| OPENAI_DEFAULT_MODEL            | Default model ID                                                   |
+| OPENAI_DEFAULT_REASONING_EFFORT | Default effort, initially default                                  |
+| OPENAI_MODEL_PRESETS            | JSON array of presets, initially []                                |
 
-## Features
+Reasoning options: `default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Not every model supports all values.
 
-- Multiple conversations with automatic titles, renaming, and deletion; edit prompts, regenerate replies, and switch between message branches.
-- Streaming replies, deep thinking, smart search, link reading, and source citations; stop generation or continue eligible replies.
-- Upload, paste, or drag and drop attachments; use voice input and read replies aloud. A live audio spectrum appears in the first row of the input area while recording on mobile.
-- Markdown, syntax highlighting, KaTeX math, and Mermaid diagrams.
-- Simplified Chinese and English, light and dark themes, mobile layouts, location settings, and chat history import and export.
+Example preset (single-line JSON):
 
-## Data and storage
+```ini
+OPENAI_MODEL_PRESETS=[{"model":"your-model-id","effort":"high","searchStrength":"medium"}]
+```
 
-In static mode, your API key and settings are stored in the browser's localStorage. Conversations and original attachments are stored in IndexedDB. Local data is isolated by browser profile and site origin. Sending messages, uploading attachments, and using speech features sends the relevant content to the configured API service.
+In Settings → Data, switch providers, edit the endpoint and password, fetch models, and control selector visibility. Changing the endpoint requires its API key or explicitly choosing no key. Saved configuration is written to `.config`.
 
-History import and export in Settings use ZIP archives. After confirmation and validation, import replaces all conversations in the current mode. In static mode this replaces local history. In server mode it replaces the shared server history too. Exports include conversations and locally available original images, but exclude API keys, site configuration, and original non-image attachments. See the [history import/export documentation (Chinese)](src/services/chat/history/README.md) for the archive format and preservation details.
+## Usage
 
-Settings → Data → Delete all chats clears conversations and local attachment originals in the current mode after confirmation. Server mode also clears shared server history. Ongoing replies stop and the app returns to a new chat. Browser API keys and settings are preserved. Files already uploaded to the API service are not deleted.
+### Model presets and quick prompts
 
-## Development
+Choose the model, reasoning effort and search strength, then click Add preset. Selecting a preset applies all three settings; deletion requires confirmation. Hiding selectors preserves the current selection. Fuzzy search matches characters in order: `ds` matches `deepseek`, but `sd` does not.
 
-| Command       | Description                               |
-| ------------- | ----------------------------------------- |
-| `pnpm dev`    | Start the development server              |
-| `pnpm build`  | Build into `dist/`                        |
-| `pnpm type`   | Run TypeScript type checks                |
-| `pnpm lint`   | Lint with oxlint                          |
-| `pnpm format` | Format with oxfmt                         |
-| `pnpm test`   | Test the server and frontend (Node.js 24) |
+Quick prompts insert built-in or custom prompts at the caret. Save a draft as a reusable prompt. Custom prompts sync in server mode.
 
-[rspack.config.ts](rspack.config.ts) uses `https://api.deepseek.com` by default. Use `createConfig({ apiOrigin, devServer })` to customize the API origin and development server proxy.
+### Search strength
 
-Chat uses `deepseek-flash` by default through Anthropic-compatible Messages / Files APIs. Speech features use ASR / TTS endpoints. Requests include extensions for search, link reading, titles, and `latest_reminder`, so the configured service must support the corresponding capabilities. Supported attachment formats are determined by server-side validation.
+| Strength | Setting | Results per call (max) | Web tool rounds (max) |
+| -------- | ------- | ---------------------: | --------------------: |
+| Off      | off     |                      0 |                     0 |
+| Low      | low     |                      5 |                     2 |
+| Medium   | medium  |                      8 |                     5 |
+| High     | high    |                     10 |                    10 |
+
+Search and URL reading share the round budget. Each round allows up to three tool calls; identical calls are deduplicated. Search has a 15-second timeout, URL reading 20 seconds. The provider must support function calling.
+
+Search uses only keyless Firecrawl over HTTP, without starting MCP. The service may be rate-limited or unavailable. Queries go to a third party; avoid sensitive information. See [search policy](server/search-policy.mjs).
+
+Reasoning is displayed when the provider returns `reasoning_content` or `reasoning`.
+
+### Read web pages
+
+With search strength enabled, the model can also call `fetch_url(url, startIndex?)` directly. Web Basics extracts text from public HTTP(S) pages, PDFs, text files, and supported posts or video transcripts. Each call returns up to 8,000 characters; use `nextStartIndex` to continue reading. Reading shares the search round budget, and the UI displays page titles, links and progress. Only text is returned to the model; page bodies are not stored in chat history. URL images and private network resources are not supported. Deploy with restricted outbound network access when exposing the service to untrusted users.
+
+### Image input
+
+OpenAI mode supports PNG, JPEG, WebP, and GIF, with or without text.
 
 ```text
+Select / paste / drop image
+    ↓
+Browser resize → Base64 image_url
+    ↓
+Node.js proxy → vision-capable model
+```
+
+- Maximum longest edge: 4096 pixels; each resulting file must be at most 6 MiB.
+- Total Base64 image data per request: 24 MiB, including historical images.
+- Originals remain in the current browser and can be used in follow-up requests when available.
+- No DeepSeek Files API is used; other document formats are not supported.
+
+## Deployment and data
+
+Default address: `127.0.0.1:3000`. To allow LAN access:
+
+```sh
+HOST=0.0.0.0 PORT=3000 pnpm start
+```
+
+For public access, use an HTTPS reverse proxy and pass `X-Forwarded-Proto: https`. Set a strong password and keep `.config` and `.data/` private. Sign in again after server restarts.
+
+| Location               | Contents                                                     |
+| ---------------------- | ------------------------------------------------------------ |
+| .config                | Site password, OpenAI settings, model presets                |
+| .data/chat-demo.sqlite | Chat history and custom quick prompts                        |
+| localStorage           | DeepSeek API key, UI settings and some selection preferences |
+| IndexedDB              | Local conversations and attachment originals                 |
+| Server memory          | Login sessions                                               |
+
+Server mode saves and loads history automatically. If another device updates a conversation first, reload for the latest server copy. Attachment descriptions sync, but original files do not. Back up `.config` and `.data/`; export a ZIP to preserve locally available images.
+
+On first use, unsynced conversations from the same origin migrate to the server. To move between origins, export a ZIP and import it at the new site.
+
+Import replaces all conversations in the current mode after confirmation and validation. Exports include conversations and locally available images, but exclude API keys, site configuration, and non-image originals. Deleting all chats clears local attachments, but not files uploaded to an API service. See the [archive format (Chinese)](src/services/chat/history/README.md).
+
+## Static mode and development
+
+Static mode uses the native DeepSeek API without server sign-in or history sync.
+
+```sh
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open [http://localhost:8090](http://localhost:8090). Run `pnpm build` to deploy `dist/` or open `dist/index.html` directly (requires browser support for file:// storage and API cross-origin access). Enter the DeepSeek API key in Settings.
+
+Native mode uses deepseek-flash through Anthropic-compatible Messages / Files APIs, with ASR / TTS for speech. It requires native search, URL reading, title, and latest_reminder extensions. Customize the API origin and development proxy via `createConfig({ apiOrigin, devServer })` in [rspack.config.ts](rspack.config.ts).
+
+| Command     | Description                            |
+| ----------- | -------------------------------------- |
+| pnpm dev    | Frontend dev server                    |
+| pnpm build  | Build into dist/                       |
+| pnpm start  | Start the Node.js server               |
+| pnpm type   | TypeScript checks                      |
+| pnpm lint   | Lint source                            |
+| pnpm format | Format source                          |
+| pnpm test   | Frontend and server tests (Node.js 24) |
+
+```text
+server/             Auth, SQLite, API proxy, search
 src/
-  app/                 Application layout, themes, and global styles
-  components/          Chat, settings, Markdown, and other UI components
-  i18n/                English and Chinese translations
+  app/              Layout, themes, sign-in
+  components/       Chat, settings, shared UI
   services/
-    api/               API requests, SSE, and protocol types
-    chat/              Conversations, message branches, storage, and history import/export
-    markdown/          Markdown parsing, syntax highlighting, and diagrams
-    speech/            Audio recording and read-aloud playback
-  utils/               Shared utilities
+    api/            API protocols and streaming events
+    chat/           Conversations, branches, storage, archives
+    markdown/       Markdown, math, diagrams
+    speech/         Recording and read-aloud playback
+  i18n/             English and Chinese translations
+  utils/            Shared utilities
+tests/              Frontend tests
+.config_example     Configuration example
 ```
 
 ## License
 
-[MIT](LICENSE). The build copies the license to `dist/LICENSE`; include it when distributing the app. Third-party dependencies are subject to their own licenses.
+[MIT](LICENSE), extended from the [original DeepSeek project](https://github.com/deepseek-ai/chat-demo). Keep `dist/LICENSE` when distributing the build. Third-party dependencies follow their respective licenses.

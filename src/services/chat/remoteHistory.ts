@@ -81,7 +81,15 @@ export const loadRemoteSummaries = (
     const missing = (await readLocalSessions()).filter((session) => !known.has(session.id))
     for (const session of missing) {
       // A null version creates the record only if it still has no live record or tombstone.
-      await request<HistoryWrite>(sessionUrl(session.id), 'PUT', { version: null, session })
+      const response = await serverFetch(sessionUrl(session.id), {
+        method: 'PUT',
+        body: JSON.stringify({ version: null, session }),
+      })
+      // Another device may have migrated or deleted this ID after our initial
+      // list. No local edits have started: adopt the server's record/tombstone.
+      if (!response.ok && response.status !== 409) {
+        throw new Error(`History request failed (${response.status})`)
+      }
     }
     if (missing.length > 0) {
       // Nothing is displayed yet, so we can adopt the whole list after migration.

@@ -4,6 +4,8 @@ import { createId } from '../../utils/id.js'
 import {
   cancelUpload,
   isImage,
+  isOpenAIImage,
+  useUploads,
   resolveMimeType,
   uploadAttachment,
   validateFiles,
@@ -60,10 +62,14 @@ const upload = (attachment: DraftAttachment, apiKey: string) => {
 export const addDraftFiles = (
   sessionId: string | null,
   files: File[],
-  apiKey: string
+  apiKey: string,
+  localImages = false
 ): TranslationMessage | null => {
   if (files.length === 0) {
     return null
+  }
+  if (localImages && files.some((file) => !isOpenAIImage(resolveMimeType(file)))) {
+    return { key: 'uploadImageOnly' }
   }
   const error = validateFiles(files, getDraft(sessionId).attachments.length)
   if (error) {
@@ -77,7 +83,9 @@ export const addDraftFiles = (
     })
   )
   updateDraft(sessionId, (draft) => ({ ...draft, attachments: [...draft.attachments, ...added] }))
-  added.forEach((attachment) => upload(attachment, apiKey))
+  if (!localImages) {
+    added.forEach((attachment) => upload(attachment, apiKey))
+  }
   return null
 }
 
@@ -92,21 +100,38 @@ export const retryDraftAttachment = (
   }
 }
 
-/** 发送按钮和实际提交共用规则：有内容，且全部附件已上传成功。 */
-export const prepareDraftMessage = (draft: Draft, tasks: Record<string, UploadTask>) => {
+/** Switching back to DeepSeek uploads locally held draft images using its existing queue. */
+export const ensureDraftUploads = (sessionId: string | null, apiKey: string) => {
+  for (const attachment of getDraft(sessionId).attachments) {
+    if (!useUploads.getState().tasks[attachment.id]) {
+      upload(attachment, apiKey)
+    }
+  }
+}
+
+/** 发送按钮和实际提交共用规则：有内容，且全部附件已准备好。 */
+export const prepareDraftMessage = (
+  draft: Draft,
+  tasks: Record<string, UploadTask>,
+  localImages = false
+) => {
   const text = draft.text.trim()
   if (!text && draft.attachments.length === 0) {
     return null
   }
-  const files: (FileAttachment & { serverId: string; blob: Blob })[] = []
+  const files: (FileAttachment & { blob: Blob })[] = []
   for (const attachment of draft.attachments) {
     const task = tasks[attachment.id]
-    if (task?.status !== 'done' || !task.serverId) {
+    if (
+      localImages
+        ? !isOpenAIImage(resolveMimeType(attachment.file))
+        : task?.status !== 'done' || !task.serverId
+    ) {
       return null
     }
     files.push({
       id: attachment.id,
-      serverId: task.serverId,
+      serverId: localImages ? null : task?.status === 'done' ? task.serverId : null,
       name: attachment.file.name,
       size: attachment.file.size,
       isImage: attachment.isImage,

@@ -52,9 +52,13 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   return (
     <div className={clsx(styles.sider, mobile && styles.mobile)}>
       <div className={styles.top}>
-        <div className={styles.appName}>{t('appName')}</div>
+        <div className={styles.appName} title={t('appName')}>
+          <img src="./logo.svg" width={28} height={28} alt="" />
+          <span>{t('appName')}</span>
+        </div>
         <IconButton
-          size="m"
+          size="xs"
+          className={styles.collapseButton}
           icon={<IconPanelLeftOutline16 />}
           tooltip={t('collapseSiderbarButton')}
           tooltipPlacement="bottom"

@@ -339,19 +339,6 @@
   gap: 4px;
 }
 
-.configSelectors select {
-  min-width: 0;
-  max-width: min(26vw, 170px);
-  padding: 4px;
-  border: 1px solid var(--dsw-alias-label-caption);
-  border-radius: 8px;
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-layer-2);
-  font: inherit;
-  font-size: 12px;
-  text-overflow: ellipsis;
-}
-
 .presetError {
   font-size: 12px;
   color: var(--dsw-alias-state-error-primary);
@@ -369,4 +356,412 @@
   border-radius: 6px;
   background: transparent;
   color: inherit;
+}
+
+.toolbarOptions {
+  display: contents;
+}
+
+/* A single rhythm for all composer controls. The outer icon buttons stay
+   anchored when the selectors wrap on a narrower screen. */
+.openAIToolbar {
+  --toolbar-height: 34px;
+  --toolbar-radius: 9px;
+  --toolbar-gap: 6px;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 10px 12px 12px;
+}
+
+.openAIToolbar .right {
+  flex: 1 1 0;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.openAIToolbar .toolbarOptions {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--toolbar-gap);
+  min-width: 0;
+}
+
+.openAIToolbar .toolbarOptions .configSelectors {
+  display: contents;
+}
+
+.openAIToolbar .modelPickerTrigger,
+.openAIToolbar .defaultModelButton {
+  box-sizing: border-box;
+  height: var(--toolbar-height);
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--toolbar-radius);
+  background-color: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.openAIToolbar .modelPickerTrigger {
+  max-width: min(30vw, 144px);
+  padding: 0 9px;
+}
+
+.openAIToolbar .modelPickerTrigger svg {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.openAIToolbar .defaultModelButton {
+  padding: 0 10px;
+  color: var(--dsw-alias-brand-text);
+}
+
+.openAIToolbar .defaultModelButton[data-removing='true'] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.openAIToolbar .modelPickerTrigger:hover:not(:disabled),
+.openAIToolbar .defaultModelButton:hover:not(:disabled) {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l3);
+}
+
+.openAIToolbar .defaultModelButton[data-removing='true']:hover:not(:disabled) {
+  color: var(--dsw-alias-state-error-primary);
+  background-color: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.openAIToolbar .modelPickerTrigger:focus-visible,
+.openAIToolbar .defaultModelButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.openAIToolbar .modelPickerTrigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.openAIToolbar .attachButton {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--toolbar-radius);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.openAIToolbar .sendButton {
+  margin-left: 0;
+}
+
+.openAIToolbar .presetError {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+/* Fixed two-row layout rather than unpredictable wrapping on phones. */
+.compactPickerLabel {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .openAIToolbar {
+    --toolbar-height: 34px;
+    display: grid;
+    grid-template-columns: 34px repeat(3, minmax(0, 1fr)) 34px;
+    gap: 6px;
+    align-items: center;
+    padding: 8px 10px 10px;
+  }
+
+  .openAIToolbar .right,
+  .openAIToolbar .toolbarOptions {
+    display: contents;
+  }
+
+  .openAIToolbar .modelPickerTrigger,
+  .openAIToolbar .defaultModelButton {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    padding: 0 6px;
+    gap: 3px;
+    font-size: 12px;
+  }
+
+  .openAIToolbar .modelControl {
+    grid-column: 1 / 3;
+    grid-row: 1;
+  }
+
+  .openAIToolbar .effortControl {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .openAIToolbar .searchControl {
+    grid-column: 4 / 6;
+    grid-row: 1;
+  }
+
+  .openAIToolbar .attachButton {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .openAIToolbar .quickControl {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .openAIToolbar .presetControl {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .openAIToolbar .defaultModelButton {
+    grid-column: 4;
+    grid-row: 2;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .openAIToolbar .sendButton {
+    grid-column: 5;
+    grid-row: 2;
+  }
+
+  .openAIToolbar .presetError {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .openAIToolbar .fullPickerLabel {
+    display: none;
+  }
+
+  .openAIToolbar .compactPickerLabel {
+    display: inline;
+  }
+
+  .openAIToolbar:not(:has(.modelControl)) .attachButton,
+  .openAIToolbar:not(:has(.modelControl)) .quickControl,
+  .openAIToolbar:not(:has(.modelControl)) .sendButton {
+    grid-row: 1;
+  }
+
+  .openAIToolbar:not(:has(.presetControl)) .quickControl {
+    grid-column: 2 / 5;
+  }
+}
+
+.defaultModelButton {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.modelPickerTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 34px;
+  max-width: min(34vw, 190px);
+  padding: 0 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.modelPickerTrigger > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.modelPickerTrigger svg {
+  flex-shrink: 0;
+}
+
+.modelPickerMenu {
+  position: fixed;
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 16px));
+  max-height: 360px;
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 12px;
+  background: var(--dsw-specific-menu);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 12px 32px #0003;
+  font-size: 13px;
+  cursor: default;
+}
+
+.composerPickerMenu {
+  width: max-content;
+  min-width: min(168px, calc(100vw - 16px));
+  max-width: min(360px, calc(100vw - 16px));
+}
+
+.pickerHeading,
+.pickerGroup {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pickerHeading {
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.modelPickerList:focus {
+  outline: none;
+}
+
+.modelPickerOption[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.modelPickerOption[aria-selected='true'] {
+  color: var(--dsw-alias-brand-text);
+}
+
+@media (max-width: 767px) {
+  .modelPickerMenu,
+  .composerPickerMenu {
+    width: min(360px, calc(100vw - 16px));
+    font-size: 14px;
+  }
+
+  .modelPickerSearch input {
+    font-size: 16px;
+  }
+}
+
+.modelPickerSearch {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l3);
+}
+
+.modelPickerSearch input {
+  flex: 1;
+  width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.modelPickerCount,
+.modelPickerEmpty {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.modelPickerList {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  margin: 4px 0;
+}
+
+.modelPickerOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+  min-height: 34px;
+}
+
+.modelPickerOption > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.modelPickerOption[data-active='true'],
+.modelPickerOption:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.modelPickerOption svg {
+  flex-shrink: 0;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.modelPickerEmpty {
+  padding: 12px 8px;
+  text-align: center;
+}
+
+.modelPickerManual {
+  flex-shrink: 0;
+  padding: 8px;
+  border: 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-brand-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.deletePresetDetails {
+  display: grid;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .modelPickerOption {
+    min-height: 40px;
+  }
+}
+
+.compactPresetAction {
+  display: none;
+}
+@media (max-width: 360px) {
+  .openAIToolbar .fullPresetAction {
+    display: none;
+  }
+  .openAIToolbar .compactPresetAction {
+    display: inline;
+  }
 }

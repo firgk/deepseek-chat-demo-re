@@ -14,24 +14,39 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   box-sizing: border-box;
-  height: 48px;
-  margin-bottom: 16px;
-  padding: 15px 0 10px 4px;
+  min-height: 48px;
+  margin-bottom: 12px;
+  padding: 8px 2px;
   flex-shrink: 0;
 }
 
 .appName {
+  display: flex;
+  flex: 1;
   min-width: 0;
-  padding-left: 4px;
-  overflow: hidden;
-  font-size: 20px;
-  line-height: 22px;
-  font-weight: 600;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--dsw-alias-brand-primary);
+  align-items: center;
+  gap: 8px;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.appName img {
+  flex-shrink: 0;
+}
+
+.appName span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.collapseButton {
+  border-radius: 8px;
 }
 
 .newChat {

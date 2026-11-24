@@ -24,7 +24,12 @@ const { toLocalSession } = await import('../src/services/chat/history/toLocal.ts
 const { readArchive, readEntry, skipEntry } =
   await import('../src/services/chat/history/zipReader.ts')
 
-const metadata = { provider: 'openai', model: 'gpt-5-2025-08-07', reasoningEffort: 'high' }
+const metadata = {
+  provider: 'openai',
+  model: 'gpt-5-2025-08-07',
+  reasoningEffort: 'high',
+  searchStrength: 'high',
+}
 
 async function roundTrip(reply) {
   const timestamp = Date.UTC(2026, 5, 6)
@@ -64,6 +69,7 @@ test('ZIP history preserves OpenAI provider, model, and reasoning effort', async
   assert.equal(reply.provider, 'openai')
   assert.equal(reply.model, 'gpt-5-2025-08-07')
   assert.equal(reply.reasoningEffort, 'high')
+  assert.equal(reply.searchStrength, 'high')
 })
 
 test('ZIP history with no provider metadata imports as an official DeepSeek reply', async () => {

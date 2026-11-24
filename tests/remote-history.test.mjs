@@ -97,6 +97,29 @@ test('startup migrates only never-seen IndexedDB sessions and returns the server
   assert.equal(requests[1].headers.get('x-chat-demo'), '1')
 })
 
+test('concurrent first migration adopts the server record and tombstone without blocking chat', async (t) => {
+  const requests = stubFetch(t, [
+    respond({ revision: 0, items: [] }),
+    respond({ error: 'conflict' }, 409),
+    respond({ error: 'conflict' }, 409),
+    respond({
+      revision: 3,
+      items: [item(session('same', 'Server title')), { id: 'deleted', version: 2, deleted: true }],
+    }),
+  ])
+  const history = await loadModule()
+  const summaries = await history.loadRemoteSummaries(async () => [
+    session('same', 'Local title'),
+    session('deleted'),
+  ])
+  assert.deepEqual(
+    summaries.map(({ id, title }) => [id, title]),
+    [['same', 'Server title']]
+  )
+  assert.equal(history.useHistoryConflict.getState(), false)
+  assert.equal(requests.length, 4)
+})
+
 test('a newer detail cannot be used as a baseline for edits to an older listed session', async (t) => {
   const requests = stubFetch(t, [
     respond({ revision: 2, items: [item(session('kept'), 2)] }),

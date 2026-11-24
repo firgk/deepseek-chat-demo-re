@@ -14,6 +14,7 @@ import {
   addDraftFiles,
   EMPTY_DRAFT,
   getDraft,
+  ensureDraftUploads,
   prepareDraftMessage,
   removeDraftAttachment,
   retryDraftAttachment,
@@ -26,7 +27,7 @@ import { Tooltip } from '../base/Tooltip.js'
 import { ensureApiKey, openSettings } from '../settings/settingsDialogState.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
-import { ACCEPT, useUploads } from '../../services/attachments.js'
+import { ACCEPT, OPENAI_IMAGE_ACCEPT, useUploads } from '../../services/attachments.js'
 import { DraftAttachments } from './DraftAttachments.js'
 import { useVoiceInput } from './useVoiceInput.js'
 import { VoiceButton } from './VoiceButton.js'
@@ -49,10 +50,11 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const openAI = useServerState((state) => state.mode) === 'openai'
   const { text, attachments } = draft
   const setText = (value: string) => setDraftText(sessionId, value)
-  const draftReady = useUploads((state) => prepareDraftMessage(draft, state.tasks) !== null)
+  const draftReady = useUploads((state) => prepareDraftMessage(draft, state.tasks, openAI) !== null)
   const streaming = useChatStore(
     (state) => sessionId !== null && Object.hasOwn(state.streaming, sessionId)
   )
+  const apiKey = useSettings((state) => state.apiKey)
   const thinking = useSettings((state) => state.thinking)
   const importingHistory = useChatStore((state) => state.importingHistory)
   const isMobile = useIsMobile()
@@ -78,16 +80,17 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     return () => observer.disconnect()
   }, [openAI, t])
 
+  useEffect(() => {
+    if (!openAI && apiKey) {
+      ensureDraftUploads(sessionId, apiKey)
+    }
+  }, [openAI, apiKey, sessionId, attachments])
+
   const acceptFiles = (files: File[]) => {
-    if (
-      openAI ||
-      files.length === 0 ||
-      useChatStore.getState().importingHistory ||
-      !ensureApiKey()
-    ) {
+    if (files.length === 0 || useChatStore.getState().importingHistory || !ensureApiKey()) {
       return
     }
-    const error = addDraftFiles(sessionId, files, useSettings.getState().apiKey ?? '')
+    const error = addDraftFiles(sessionId, files, useSettings.getState().apiKey ?? '', openAI)
     if (error) {
       showToast(error)
     }
@@ -144,11 +147,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const recording = voice.status === 'recording'
 
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
-  const canSend =
-    !importingHistory &&
-    !streaming &&
-    voice.status === 'idle' &&
-    (openAI ? Boolean(text.trim()) : draftReady)
+  const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
 
   const insertQuickPrompt = (preset: string) => {
     const textarea = textareaRef.current
@@ -165,14 +164,12 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     if (
       useChatStore.getState().importingHistory ||
       voice.status !== 'idle' ||
-      (openAI
-        ? !getDraft(sessionId).text.trim()
-        : !prepareDraftMessage(getDraft(sessionId), useUploads.getState().tasks))
+      !prepareDraftMessage(getDraft(sessionId), useUploads.getState().tasks, openAI)
     ) {
       return
     }
     const provider = useServerState.getState()
-    if (openAI && !(provider.showSelectors ? provider.model : provider.config?.defaultModel)) {
+    if (openAI && !(provider.model || provider.config?.defaultModel)) {
       openSettings('data')
       return
     }
@@ -197,9 +194,12 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
         }
       }}
     >
-      {!openAI ? (
-        <DraftAttachments items={attachments} onRetry={retryFile} onRemove={removeFile} />
-      ) : null}
+      <DraftAttachments
+        items={attachments}
+        localImages={openAI}
+        onRetry={retryFile}
+        onRemove={removeFile}
+      />
       <div className={styles.textareaWrapper}>
         <textarea
           ref={textareaRef}
@@ -226,7 +226,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           }}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files)
-            if (!openAI && files.length > 0) {
+            if (files.length > 0) {
               event.preventDefault()
               acceptFiles(files)
             }
@@ -237,11 +237,29 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           {`${text}\n`}
         </div>
       </div>
-      <div className={styles.functionRow}>
+      <div className={clsx(styles.functionRow, openAI && styles.openAIToolbar)}>
+        <IconButton
+          size="m"
+          tone="primary"
+          icon={<IconPaperclipOutline16 />}
+          className={styles.attachButton}
+          tooltip={t(openAI ? 'uploadImage' : 'uploadFile')}
+          disabled={importingHistory}
+          onClick={() => ensureApiKey() && fileInputRef.current?.click()}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          hidden
+          accept={openAI ? OPENAI_IMAGE_ACCEPT : ACCEPT}
+          onChange={(event) => {
+            acceptFiles(Array.from(event.target.files ?? []))
+            event.target.value = ''
+          }}
+        />
         {/* 深度思考 / 智能搜索开关，tooltip 在按钮上方 */}
-        {openAI ? (
-          <ModelControls />
-        ) : (
+        {!openAI ? (
           <div ref={togglesRef} className={styles.toggles}>
             <Tooltip content={t('deactivatedThinkTooltip')}>
               <button
@@ -268,49 +286,33 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               </button>
             </Tooltip>
           </div>
-        )}
+        ) : null}
         <div className={styles.right}>
-          <QuickPrompts
-            draft={text}
-            disabled={importingHistory || voice.status !== 'idle'}
-            onInsert={insertQuickPrompt}
-          />
-          {!openAI ? (
-            <>
-              <VoiceButton
-                status={voice.status}
-                disabled={!voice.available}
-                seconds={voice.seconds}
-                onClick={() => {
-                  if (
-                    voice.status !== 'idle' ||
-                    (!useChatStore.getState().importingHistory && ensureApiKey())
-                  ) {
-                    void voice.toggle()
-                  }
-                }}
-              />
-              <IconButton
-                size="m"
-                tone="primary"
-                icon={<IconPaperclipOutline16 />}
-                tooltip={t('uploadFile')}
-                disabled={importingHistory}
-                onClick={() => ensureApiKey() && fileInputRef.current?.click()}
-              />
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                accept={ACCEPT}
-                onChange={(event) => {
-                  acceptFiles(Array.from(event.target.files ?? []))
-                  event.target.value = ''
-                }}
-              />
-            </>
-          ) : null}
+          <div className={styles.toolbarOptions}>
+            <QuickPrompts
+              draft={text}
+              disabled={importingHistory || voice.status !== 'idle'}
+              onInsert={insertQuickPrompt}
+            />
+            {!openAI ? (
+              <>
+                <VoiceButton
+                  status={voice.status}
+                  disabled={!voice.available}
+                  seconds={voice.seconds}
+                  onClick={() => {
+                    if (
+                      voice.status !== 'idle' ||
+                      (!useChatStore.getState().importingHistory && ensureApiKey())
+                    ) {
+                      void voice.toggle()
+                    }
+                  }}
+                />
+              </>
+            ) : null}
+            {openAI ? <ModelControls /> : null}
+          </div>
           {streaming && sessionId ? (
             <button
               type="button"
@@ -336,7 +338,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           )}
         </div>
       </div>
-      {!openAI && dragging ? <DragMask /> : null}
+      {dragging ? <DragMask /> : null}
     </div>
   )
 }

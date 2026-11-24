@@ -47,6 +47,8 @@ export type AnchoredOptions = {
    * 旧位置绘制一帧再回弹，所以需要这个同步入口。
    */
   measureKey?: unknown
+  /** 自定义内容高度测量，适用于内部独立滚动的浮层。 */
+  measureHeight?: (floating: HTMLElement) => number
 }
 
 const clampLeft = (left: number, width: number) =>
@@ -57,7 +59,7 @@ const alignLeft = (anchor: DOMRect, width: number, align: Align, alignOffset: nu
     return clampLeft(anchor.left + anchor.width / 2 - width / 2 + alignOffset, width)
   }
   if (align === 'end') {
-    return Math.max(VIEWPORT_PADDING, anchor.right - width + alignOffset)
+    return clampLeft(anchor.right - width + alignOffset, width)
   }
   return clampLeft(anchor.left + alignOffset, width)
 }
@@ -93,6 +95,7 @@ export const useAnchoredPosition = <T extends HTMLElement, F extends HTMLElement
     minSpace = 160,
     measureFirstChild = false,
     measureKey,
+    measureHeight,
   }: AnchoredOptions = {}
 ) => {
   const anchorRef = useRef<T | null>(null) as MutableRefObject<T | null>
@@ -129,8 +132,12 @@ export const useAnchoredPosition = <T extends HTMLElement, F extends HTMLElement
       return
     }
     const rect = anchor.getBoundingClientRect()
-    const spaceAbove = rect.top - offset - VIEWPORT_PADDING
-    const spaceBelow = window.innerHeight - rect.bottom - offset - VIEWPORT_PADDING
+    const viewport = window.visualViewport
+    const viewportTop = viewport?.scale === 1 ? viewport.offsetTop : 0
+    const viewportBottom =
+      viewport?.scale === 1 ? viewport.offsetTop + viewport.height : window.innerHeight
+    const spaceAbove = rect.top - offset - viewportTop - VIEWPORT_PADDING
+    const spaceBelow = viewportBottom - rect.bottom - offset - VIEWPORT_PADDING
 
     if (maxHeight === undefined) {
       const { width, height } = floating.getBoundingClientRect()
@@ -145,16 +152,32 @@ export const useAnchoredPosition = <T extends HTMLElement, F extends HTMLElement
     const resolved = resolveSide(spaceAbove, spaceBelow, side, minSpace)
     const available = Math.max(0, resolved === 'top' ? spaceAbove : spaceBelow)
     // 内容比可用空间小时按内容收口，避免浮层留出多余空白
-    const height = Math.max(40, Math.min(maxHeight, available, floating.scrollHeight + 2))
+    const contentHeight = measureHeight?.(floating) ?? floating.scrollHeight + 2
+    const height = Math.max(0, Math.min(maxHeight, available, contentHeight))
+    const width = floating.getBoundingClientRect().width
     applyPosition({
-      top:
-        resolved === 'top'
-          ? Math.max(VIEWPORT_PADDING, rect.top - offset - height)
-          : rect.bottom + offset,
-      right: Math.max(VIEWPORT_PADDING, window.innerWidth - rect.right),
+      top: Math.max(
+        viewportTop + VIEWPORT_PADDING,
+        Math.min(
+          resolved === 'top' ? rect.top - offset - height : rect.bottom + offset,
+          viewportBottom - VIEWPORT_PADDING - height
+        )
+      ),
+      left: alignLeft(rect, width, align, alignOffset),
       maxHeight: height,
     })
-  }, [align, alignOffset, applyPosition, floatingRef, getAnchor, maxHeight, minSpace, offset, side])
+  }, [
+    align,
+    alignOffset,
+    applyPosition,
+    floatingRef,
+    getAnchor,
+    maxHeight,
+    measureHeight,
+    minSpace,
+    offset,
+    side,
+  ])
 
   // 打开时与内容变化时同步测量，必须在绘制前完成
   useLayoutEffect(() => {
@@ -183,10 +206,14 @@ export const useAnchoredPosition = <T extends HTMLElement, F extends HTMLElement
     }
     window.addEventListener('scroll', update, { capture: true, passive: true })
     window.addEventListener('resize', update, { passive: true })
+    window.visualViewport?.addEventListener('resize', update)
+    window.visualViewport?.addEventListener('scroll', update)
     return () => {
       observer.disconnect()
       window.removeEventListener('scroll', update, { capture: true })
       window.removeEventListener('resize', update)
+      window.visualViewport?.removeEventListener('resize', update)
+      window.visualViewport?.removeEventListener('scroll', update)
     }
   }, [floatingRef, getAnchor, open, update])
 

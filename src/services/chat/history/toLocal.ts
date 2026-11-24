@@ -221,6 +221,8 @@ const toAssistant = (message: ChatMessage): AssistantMessage => {
           provider: message.chat_demo.provider,
           model: message.chat_demo.model,
           reasoningEffort: message.chat_demo.reasoning_effort,
+          searchStrength:
+            message.chat_demo.search_strength ?? (message.search_enabled ? 'medium' : 'off'),
         }
       : { model: null }),
     thinking: message.thinking_enabled,

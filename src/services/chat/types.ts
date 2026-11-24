@@ -8,7 +8,7 @@ import type {
   StopReason,
   TextCitation,
 } from '../api/types.js'
-import type { ReasoningEffort } from '../composerOptions.js'
+import type { ReasoningEffort, SearchStrength } from '../composerOptions.js'
 
 /**
  * 消息附件。id 是本地标识（IndexedDB files 表的主键，原件按它存储，所有引用同一 id 的消息共用一份），
@@ -96,6 +96,7 @@ export type AssistantMessage = MessageBranch &
     thinking?: boolean
     /** 请求时是否声明 deepseek_web_search；关闭时仍声明 deepseek_read_url */
     search?: boolean
+    searchStrength?: SearchStrength
     /** 本轮请求的系统信息快照；各回答版本独立保存，续写沿用。历史消息中缺省的快照保持为空。 */
     latestReminder?: string
     /** 是否允许作为续写前缀；仍需满足回复状态与内容限制。 */

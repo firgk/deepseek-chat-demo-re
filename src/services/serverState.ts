@@ -1,11 +1,25 @@
 import { create } from 'zustand'
-import type { ReasoningEffort } from './composerOptions.js'
+import { searchStrengths, type ReasoningEffort, type SearchStrength } from './composerOptions.js'
 
 export const serverEnabled = () =>
   typeof document !== 'undefined' &&
   document.querySelector('meta[name="chat-demo-server"]') !== null
 
-export type ServerConfig = { baseUrl: string; defaultModel: string; hasApiKey: boolean }
+export type ModelPreset = {
+  model: string
+  effort: ReasoningEffort
+  searchStrength?: SearchStrength
+}
+export const modelPresetKey = (preset: ModelPreset) =>
+  JSON.stringify([preset.model, preset.effort, preset.searchStrength ?? 'off'])
+
+export type ServerConfig = {
+  baseUrl: string
+  defaultModel: string
+  defaultReasoningEffort: ReasoningEffort
+  hasApiKey: boolean
+  modelPresets?: ModelPreset[]
+}
 export type PromptPreset = { id: string; name: string; text: string }
 type Mode = 'deepseek' | 'openai'
 type ServerState = {
@@ -14,9 +28,11 @@ type ServerState = {
   config: ServerConfig | null
   model: string
   effort: ReasoningEffort
+  searchStrength: SearchStrength
   efforts: ReadonlyMap<string, ReasoningEffort>
   showSelectors: boolean
   models: string[]
+  manualModels: string[]
   presets: PromptPreset[]
 }
 
@@ -36,6 +52,10 @@ const setPreference = (key: string, value: string) => {
   }
 }
 
+const initialSearchStrength = (): SearchStrength =>
+  searchStrengths.find((value) => value === storedPreference('chat-demo:search-strength')) ??
+  (storedPreference('chat-demo:search') === 'true' ? 'medium' : 'off')
+
 export const useServerState = create<ServerState>(() => ({
   auth: 'checking',
   mode:
@@ -43,9 +63,11 @@ export const useServerState = create<ServerState>(() => ({
   config: null,
   model: '',
   effort: 'default',
+  searchStrength: initialSearchStrength(),
   efforts: new Map(),
   showSelectors: storedPreference('chat-demo:model-selectors') !== 'false',
   models: [],
+  manualModels: [],
   presets: [],
 }))
 
@@ -60,7 +82,54 @@ export const setSelectorsVisible = (showSelectors: boolean) => {
 }
 
 export const chooseModel = (model: string) => {
-  useServerState.setState((state) => ({ model, effort: state.efforts.get(model) ?? 'default' }))
+  useServerState.setState((state) => ({
+    model,
+    effort:
+      state.efforts.get(model) ??
+      (model === state.config?.defaultModel
+        ? (state.config.defaultReasoningEffort ?? 'default')
+        : 'default'),
+  }))
+}
+
+export const restoreModelDefaults = () => {
+  const { config } = useServerState.getState()
+  if (config) {
+    useServerState.setState((state) => ({
+      model: config.defaultModel,
+      effort: config.defaultReasoningEffort ?? 'default',
+      efforts: new Map(state.efforts).set(
+        config.defaultModel,
+        config.defaultReasoningEffort ?? 'default'
+      ),
+    }))
+  }
+}
+
+export const chooseSearchStrength = (searchStrength: SearchStrength) => {
+  setPreference('chat-demo:search-strength', searchStrength)
+  useServerState.setState({ searchStrength })
+}
+
+export const selectModelPreset = (preset: ModelPreset) => {
+  chooseSearchStrength(preset.searchStrength ?? 'off')
+  useServerState.setState((state) => ({
+    model: preset.model,
+    effort: preset.effort,
+    efforts: new Map(state.efforts).set(preset.model, preset.effort),
+  }))
+  setPreference('chat-demo:model-preset', modelPresetKey(preset))
+}
+
+export const chooseManualModel = (value: string) => {
+  const model = value.trim()
+  if (!model || model.length > 1024) {
+    return
+  }
+  useServerState.setState((state) => ({
+    manualModels: [...new Set([...state.manualModels, model])],
+  }))
+  chooseModel(model)
 }
 
 export const chooseEffort = (effort: ReasoningEffort) => {
@@ -105,7 +174,20 @@ export const loadServerSettings = async () => {
     serverRequest<ServerConfig>('/api/config'),
     serverRequest<{ presets: PromptPreset[] }>('/api/presets'),
   ])
-  useServerState.setState({ config, model: config.defaultModel, presets })
+  useServerState.setState({ config, presets, efforts: new Map() })
+  restoreModelDefaults()
+  const presetsList = config.modelPresets ?? []
+  const preferredPreset = storedPreference('chat-demo:model-preset')
+  const preset =
+    presetsList.find(
+      (p) =>
+        modelPresetKey(p) === preferredPreset ||
+        ((p.searchStrength ?? 'off') === 'off' &&
+          JSON.stringify([p.model, p.effort]) === preferredPreset)
+    ) ?? presetsList[0]
+  if (preset) {
+    selectModelPreset(preset)
+  }
   const preferredMode = storedPreference('chat-demo:provider')
   useServerState.setState({
     mode: config.baseUrl && preferredMode !== 'deepseek' ? 'openai' : 'deepseek',
@@ -116,7 +198,10 @@ export const loadServerSettings = async () => {
 }
 
 export const saveServerConfig = async (
-  fields: Pick<ServerConfig, 'baseUrl' | 'defaultModel'> & { password?: string; apiKey?: string }
+  fields: Partial<Pick<ServerConfig, 'baseUrl' | 'defaultModel' | 'defaultReasoningEffort'>> & {
+    password?: string
+    apiKey?: string
+  }
 ) => {
   const oldConfig = useServerState.getState().config
   const config = await serverRequest<ServerConfig>('/api/config', {
@@ -128,16 +213,36 @@ export const saveServerConfig = async (
     return
   }
   const endpointChanged = oldConfig?.baseUrl !== config.baseUrl
-  const defaultChanged = oldConfig?.defaultModel !== config.defaultModel
-  useServerState.setState(endpointChanged ? { config, models: [], efforts: new Map() } : { config })
+  const defaultChanged =
+    oldConfig?.defaultModel !== config.defaultModel ||
+    oldConfig?.defaultReasoningEffort !== config.defaultReasoningEffort
+  useServerState.setState(
+    endpointChanged ? { config, models: [], manualModels: [], efforts: new Map() } : { config }
+  )
   if (endpointChanged || defaultChanged) {
-    chooseModel(config.defaultModel)
+    restoreModelDefaults()
   }
   if (!config.baseUrl) {
     setProvider('deepseek')
   }
   if (config.baseUrl && (endpointChanged || fields.apiKey)) {
     void getModels().catch(() => undefined)
+  }
+}
+
+export const changeModelPreset = async (preset: ModelPreset, remove = false) => {
+  const config = await serverRequest<ServerConfig>('/api/config', {
+    method: 'PUT',
+    body: JSON.stringify(remove ? { removeModelPreset: preset } : { addModelPreset: preset }),
+  })
+  if (!Array.isArray(config.modelPresets)) {
+    throw new Error('Restart the server to enable model presets.')
+  }
+  useServerState.setState({ config })
+  if (!remove) {
+    selectModelPreset(preset)
+  } else if (storedPreference('chat-demo:model-preset') === modelPresetKey(preset)) {
+    setPreference('chat-demo:model-preset', '')
   }
 }
 

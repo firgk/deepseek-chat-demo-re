@@ -1,4 +1,4 @@
-import type { ReasoningEffort } from '../../composerOptions.js'
+import type { ReasoningEffort, SearchStrength } from '../../composerOptions.js'
 
 /**
  * 历史会话导出产物（deepseek_data-*.zip）的类型定义。
@@ -69,6 +69,7 @@ export type ChatMessage = {
     provider: 'openai'
     model: string
     reasoning_effort: ReasoningEffort
+    search_strength?: SearchStrength
   }
 }
 

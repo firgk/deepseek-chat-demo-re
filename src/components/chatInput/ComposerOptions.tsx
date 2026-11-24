@@ -1,11 +1,28 @@
-import { useState } from 'react'
+import clsx from 'clsx'
+import { useEffect, useId, useRef, useState } from 'react'
+import { useIsMobile } from '../../app/viewport.js'
+import { createPortal } from 'react-dom'
+import { useAnchoredPosition, useDismiss } from '../base/anchored.js'
+import { IconCheckOutline16, IconChevronDownOutline14, IconSearchOutline16 } from '../base/icons.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
-import { effortOptions, type ReasoningEffort } from '../../services/composerOptions.js'
+import {
+  effortLabels,
+  effortOptions,
+  matchesModel,
+  searchLabels,
+  searchStrengths,
+} from '../../services/composerOptions.js'
 import {
   changePreset,
   chooseEffort,
+  chooseSearchStrength,
+  chooseManualModel,
   chooseModel,
+  changeModelPreset,
+  modelPresetKey,
+  type ModelPreset,
+  selectModelPreset,
   serverEnabled,
   useServerState,
 } from '../../services/serverState.js'
@@ -13,54 +30,572 @@ import { createId } from '../../utils/id.js'
 import { useSettings } from '../../services/settings.js'
 import styles from './ChatInput.module.css'
 
-export const effortLabels: Record<ReasoningEffort, [string, string]> = {
-  default: ['默认', 'Default'],
-  none: ['关闭', 'None'],
-  minimal: ['极低', 'Minimal'],
-  low: ['低', 'Low'],
-  medium: ['中', 'Medium'],
-  high: ['高', 'High'],
-  xhigh: ['极高', 'Extra high'],
-  max: ['最大', 'Max'],
+// The list scrolls independently. Its overflow is not part of the outer menu's
+// scrollHeight, so include it when determining the menu's natural height.
+const measureModelMenuHeight = (menu: HTMLElement) => {
+  const list = menu.querySelector('[role="listbox"]')
+  return menu.offsetHeight + (list ? Math.max(0, list.scrollHeight - list.clientHeight) : 0)
+}
+
+type PickerOption<T extends string> = {
+  value: T
+  label: string
+  group?: string
+  disabled?: boolean
+}
+
+const ComposerPicker = <T extends string>({
+  label,
+  value,
+  options,
+  onSelect,
+  placeholder,
+  compactLabel,
+  disabled,
+  className,
+}: {
+  label: string
+  value: T | ''
+  options: PickerOption<T>[]
+  onSelect: (value: T) => void
+  placeholder?: string
+  compactLabel?: string
+  disabled?: boolean
+  className?: string
+}) => {
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const listId = useId()
+  const current = options.find((option) => option.value === value)
+  const { anchorRef, floatingRef, position } = useAnchoredPosition<
+    HTMLButtonElement,
+    HTMLDivElement
+  >(open, {
+    side: 'top',
+    align: 'end',
+    maxHeight: 360,
+    minSpace: 160,
+    measureKey: options.length,
+    measureHeight: measureModelMenuHeight,
+  })
+  const close = () => setOpen(false)
+  useDismiss(open, [anchorRef, floatingRef], close, { captureEscape: true })
+  const select = (option: PickerOption<T>) => {
+    if (option.disabled) {
+      return
+    }
+    close()
+    anchorRef.current?.focus({ preventScroll: true })
+    onSelect(option.value)
+  }
+  const show = () => {
+    const index = options.findIndex((option) => option.value === value && !option.disabled)
+    setActive(
+      index >= 0
+        ? index
+        : Math.max(
+            0,
+            options.findIndex((option) => !option.disabled)
+          )
+    )
+    setOpen(true)
+  }
+  useEffect(() => {
+    if (open) {
+      floatingRef.current
+        ?.querySelector<HTMLElement>('[role="listbox"]')
+        ?.focus({ preventScroll: true })
+    }
+  }, [open, floatingRef])
+  useEffect(() => {
+    if (open) {
+      floatingRef.current
+        ?.querySelector('[data-active="true"]')
+        ?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [active, open, floatingRef])
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        className={clsx(styles.modelPickerTrigger, className)}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        disabled={disabled}
+        title={current?.label ?? placeholder ?? label}
+        onClick={() => (open ? close() : show())}
+        onKeyDown={(event) => {
+          if (!open && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+            event.preventDefault()
+            show()
+          }
+        }}
+      >
+        <span className={compactLabel ? styles.fullPickerLabel : undefined}>
+          {current?.label ?? placeholder ?? label}
+        </span>
+        {compactLabel ? <span className={styles.compactPickerLabel}>{compactLabel}</span> : null}
+        <IconChevronDownOutline14 />
+      </button>
+      {open && !disabled
+        ? createPortal(
+            <div
+              ref={floatingRef}
+              className={clsx(styles.modelPickerMenu, styles.composerPickerMenu)}
+              style={position ?? { visibility: 'hidden' }}
+            >
+              <div className={styles.pickerHeading}>{label}</div>
+              <div
+                id={listId}
+                role="listbox"
+                aria-label={label}
+                tabIndex={0}
+                aria-activedescendant={options[active] ? listId + '-' + active : undefined}
+                className={styles.modelPickerList}
+                onKeyDown={(event) => {
+                  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                    event.preventDefault()
+                    const step = event.key === 'ArrowUp' || event.key === 'End' ? -1 : 1
+                    let index =
+                      event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? options.length - 1
+                          : active + step
+                    while (index >= 0 && index < options.length && options[index].disabled) {
+                      index += step
+                    }
+                    if (index >= 0 && index < options.length) {
+                      setActive(index)
+                    }
+                  } else if ((event.key === 'Enter' || event.key === ' ') && options[active]) {
+                    event.preventDefault()
+                    select(options[active])
+                  } else if (event.key === 'Tab') {
+                    close()
+                    anchorRef.current?.focus({ preventScroll: true })
+                  }
+                }}
+              >
+                {options.map((option, index) => (
+                  <div key={option.value} role="presentation">
+                    {option.group && option.group !== options[index - 1]?.group ? (
+                      <div className={styles.pickerGroup}>{option.group}</div>
+                    ) : null}
+                    <div
+                      id={listId + '-' + index}
+                      role="option"
+                      aria-selected={option.value === value}
+                      aria-disabled={option.disabled || undefined}
+                      data-active={active === index}
+                      className={styles.modelPickerOption}
+                      onClick={() => select(option)}
+                    >
+                      <span>{option.label}</span>
+                      {option.value === value ? <IconCheckOutline16 /> : null}
+                    </div>
+                  </div>
+                ))}
+                {!options.length ? (
+                  <div className={styles.modelPickerEmpty}>{placeholder ?? label}</div>
+                ) : null}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </>
+  )
+}
+
+const ModelPicker = ({
+  model,
+  choices,
+  disabled,
+  zh,
+  onManual,
+}: {
+  model: string
+  choices: string[]
+  disabled: boolean
+  zh: boolean
+  onManual: () => void
+}) => {
+  const mobile = useIsMobile()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const input = useRef<HTMLInputElement>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const listId = useId()
+  const matches = choices.filter((item) => matchesModel(item, query))
+  const { anchorRef, floatingRef, position } = useAnchoredPosition<
+    HTMLButtonElement,
+    HTMLDivElement
+  >(open, {
+    side: 'top',
+    align: 'end',
+    maxHeight: 360,
+    minSpace: 220,
+    measureKey: query + ':' + matches.length,
+    measureHeight: measureModelMenuHeight,
+  })
+  const close = () => setOpen(false)
+  useDismiss(open, [anchorRef, floatingRef], close, { captureEscape: true })
+  useEffect(() => {
+    if (open && !mobile) {
+      input.current?.focus({ preventScroll: true })
+    }
+  }, [open, mobile])
+  useEffect(() => {
+    if (open) {
+      list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [active, open])
+  const select = (item: string) => {
+    chooseModel(item)
+    close()
+    anchorRef.current?.focus()
+  }
+  return (
+    <>
+      <button
+        type="button"
+        ref={anchorRef}
+        className={clsx(styles.modelPickerTrigger, styles.modelControl)}
+        aria-label={zh ? '模型' : 'Model'}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        title={model}
+        onClick={() => {
+          setQuery('')
+          setActive(0)
+          setOpen(!open)
+        }}
+      >
+        <span>{model || (zh ? '选择模型' : 'Select model')}</span>
+        <IconChevronDownOutline14 />
+      </button>
+      {open && !disabled
+        ? createPortal(
+            <div
+              ref={floatingRef}
+              className={styles.modelPickerMenu}
+              style={position ?? { visibility: 'hidden' }}
+            >
+              <div className={styles.modelPickerSearch}>
+                <IconSearchOutline16 />
+                <input
+                  ref={input}
+                  role="combobox"
+                  aria-label={zh ? '搜索模型' : 'Search models'}
+                  aria-autocomplete="list"
+                  aria-expanded="true"
+                  aria-controls={listId}
+                  aria-activedescendant={matches[active] ? listId + '-' + active : undefined}
+                  placeholder={zh ? '搜索模型…' : 'Search models…'}
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.currentTarget.value)
+                    setActive(0)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing) {
+                      return
+                    }
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      setActive((index) =>
+                        Math.max(
+                          0,
+                          Math.min(matches.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))
+                        )
+                      )
+                    } else if (event.key === 'Enter') {
+                      event.preventDefault()
+                      if (matches[active]) {
+                        select(matches[active])
+                      }
+                    }
+                  }}
+                />
+                <span className={styles.modelPickerCount}>
+                  {matches.length}/{choices.length}
+                </span>
+              </div>
+              <div
+                ref={list}
+                id={listId}
+                role="listbox"
+                aria-label={zh ? '模型列表' : 'Models'}
+                className={styles.modelPickerList}
+              >
+                {matches.map((item, index) => (
+                  <div
+                    key={item}
+                    id={listId + '-' + index}
+                    role="option"
+                    aria-selected={item === model}
+                    data-active={index === active}
+                    className={styles.modelPickerOption}
+                    onClick={() => select(item)}
+                  >
+                    <span>{item}</span>
+                    {item === model ? <IconCheckOutline16 /> : null}
+                  </div>
+                ))}
+                {!matches.length ? (
+                  <div className={styles.modelPickerEmpty}>
+                    {zh ? '没有匹配的模型' : 'No matching models'}
+                  </div>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className={styles.modelPickerManual}
+                onClick={() => {
+                  close()
+                  onManual()
+                }}
+              >
+                {zh ? '手动输入模型 ID…' : 'Enter model ID…'}
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
+    </>
+  )
 }
 
 export const ModelControls = () => {
   const zh = useSettings((state) => state.locale) === 'zh-CN'
-  const { config, model, models, effort, showSelectors } = useServerState()
+  const { config, model, models, manualModels, effort, searchStrength, showSelectors } =
+    useServerState()
+  const [manual, setManual] = useState<string | null>(null)
+  const [savingPreset, setSavingPreset] = useState(false)
+  const [deletingPreset, setDeletingPreset] = useState<ModelPreset | null>(null)
+  const [modelPresetError, setModelPresetError] = useState('')
+  const modelPresets = config?.modelPresets ?? []
+  const selectedPreset = modelPresets.find(
+    (p) =>
+      p.model === model && p.effort === effort && (p.searchStrength ?? 'off') === searchStrength
+  )
+  const updatePreset = async (preset: ModelPreset, remove = false) => {
+    if (savingPreset) {
+      return
+    }
+    setSavingPreset(true)
+    setModelPresetError('')
+    try {
+      await changeModelPreset(preset, remove)
+    } catch (error) {
+      setModelPresetError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSavingPreset(false)
+    }
+  }
   if (!showSelectors) {
     return null
   }
-  const choices = [...new Set([model, config?.defaultModel ?? '', ...models])].filter(Boolean)
+  const choices = [
+    ...new Set([
+      model,
+      config?.defaultModel ?? '',
+      ...models,
+      ...manualModels,
+      ...modelPresets.map((p) => p.model),
+    ]),
+  ].filter(Boolean)
   return (
     <div className={styles.configSelectors}>
-      <select
-        aria-label={zh ? '模型' : 'Model'}
-        value={model}
-        onChange={(event) => chooseModel(event.currentTarget.value)}
-      >
-        {!model ? <option value="">{zh ? '选择模型' : 'Select model'}</option> : null}
-        {choices.map((item) => (
-          <option key={item} value={item}>
-            {item}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={zh ? '思考深度' : 'Reasoning effort'}
+      <ModelPicker
+        model={model}
+        choices={choices}
+        disabled={savingPreset}
+        zh={zh}
+        onManual={() => setManual('')}
+      />
+      <ComposerPicker
+        label={zh ? '思考深度' : 'Reasoning effort'}
+        className={styles.effortControl}
+        compactLabel={effortLabels[effort][zh ? 0 : 1]}
         value={effort}
-        onChange={(event) => {
-          const value = effortOptions.find((item) => item === event.currentTarget.value)
-          if (value) {
-            chooseEffort(value)
+        disabled={savingPreset}
+        options={effortOptions.map((item) => ({
+          value: item,
+          label: (zh ? '思考: ' : 'Think: ') + effortLabels[item][zh ? 0 : 1],
+        }))}
+        onSelect={chooseEffort}
+      />
+      <ComposerPicker
+        label={zh ? '搜索强度' : 'Search strength'}
+        className={styles.searchControl}
+        value={searchStrength}
+        disabled={savingPreset}
+        options={searchStrengths.map((item) => ({
+          value: item,
+          label: (zh ? '搜索: ' : 'Search: ') + searchLabels[item][zh ? 0 : 1],
+        }))}
+        onSelect={chooseSearchStrength}
+      />
+      {config?.baseUrl ? (
+        <>
+          <ComposerPicker
+            label={zh ? '模型预设' : 'Model presets'}
+            className={styles.presetControl}
+            placeholder={zh ? '选择预设' : 'Select preset'}
+            compactLabel={zh ? '预设' : 'Presets'}
+            value={selectedPreset ? modelPresetKey(selectedPreset) : ''}
+            disabled={savingPreset}
+            options={modelPresets.map((preset) => ({
+              value: modelPresetKey(preset),
+              label:
+                preset.model +
+                ' · ' +
+                effortLabels[preset.effort][zh ? 0 : 1] +
+                ' · ' +
+                (zh ? '搜索: ' : 'Search: ') +
+                searchLabels[preset.searchStrength ?? 'off'][zh ? 0 : 1],
+            }))}
+            onSelect={(value) => {
+              const preset = modelPresets.find((item) => modelPresetKey(item) === value)
+              if (preset) {
+                selectModelPreset(preset)
+              }
+            }}
+          />
+          <Button
+            size="s"
+            variant="outlined"
+            data-removing={Boolean(selectedPreset)}
+            className={styles.defaultModelButton}
+            aria-label={
+              savingPreset
+                ? zh
+                  ? '处理中'
+                  : 'Saving'
+                : selectedPreset
+                  ? zh
+                    ? '删除预设'
+                    : 'Delete preset'
+                  : zh
+                    ? '添加预设'
+                    : 'Add preset'
+            }
+            disabled={!model || savingPreset}
+            onClick={() => {
+              if (selectedPreset) {
+                setDeletingPreset(selectedPreset)
+              } else {
+                void updatePreset({ model, effort, searchStrength })
+              }
+            }}
+          >
+            <span className={styles.fullPresetAction}>
+              {savingPreset
+                ? zh
+                  ? '处理中…'
+                  : 'Saving…'
+                : selectedPreset
+                  ? zh
+                    ? '删除预设'
+                    : 'Delete preset'
+                  : zh
+                    ? '添加预设'
+                    : 'Add preset'}
+            </span>
+            <span className={styles.compactPresetAction}>
+              {savingPreset
+                ? zh
+                  ? '处理中'
+                  : 'Saving'
+                : selectedPreset
+                  ? zh
+                    ? '删除'
+                    : 'Delete'
+                  : zh
+                    ? '添加'
+                    : 'Add'}
+            </span>
+          </Button>
+        </>
+      ) : null}
+      {modelPresetError ? (
+        <small role="alert" className={styles.presetError}>
+          {modelPresetError}
+        </small>
+      ) : null}
+      {deletingPreset ? (
+        <Modal
+          title={zh ? '确认删除预设？' : 'Delete this preset?'}
+          onClose={() => setDeletingPreset(null)}
+          footer={
+            <>
+              <Button variant="outlined" onClick={() => setDeletingPreset(null)}>
+                {zh ? '取消' : 'Cancel'}
+              </Button>
+              <Button
+                variant="danger"
+                disabled={savingPreset}
+                onClick={() => {
+                  const preset = deletingPreset
+                  setDeletingPreset(null)
+                  void updatePreset(preset, true)
+                }}
+              >
+                {zh ? '确认删除' : 'Delete preset'}
+              </Button>
+            </>
           }
-        }}
-      >
-        {effortOptions.map((item) => (
-          <option key={item} value={item}>
-            {effortLabels[item][zh ? 0 : 1]}
-          </option>
-        ))}
-      </select>
+        >
+          <div className={styles.deletePresetDetails}>
+            <div>{deletingPreset.model}</div>
+            <div>
+              {zh ? '思考强度' : 'Reasoning effort'}:{' '}
+              {effortLabels[deletingPreset.effort][zh ? 0 : 1]}
+            </div>
+            <div>
+              {zh ? '搜索强度' : 'Search strength'}:{' '}
+              {searchLabels[deletingPreset.searchStrength ?? 'off'][zh ? 0 : 1]}
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+      {manual !== null ? (
+        <Modal
+          closable
+          title={zh ? '手动输入模型 ID' : 'Enter model ID'}
+          onClose={() => setManual(null)}
+        >
+          <form
+            className={styles.presetForm}
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (manual.trim()) {
+                chooseManualModel(manual)
+                setManual(null)
+              }
+            }}
+          >
+            <input
+              aria-label={zh ? '模型 ID' : 'Model ID'}
+              autoFocus
+              required
+              maxLength={1024}
+              value={manual}
+              onChange={(event) => setManual(event.currentTarget.value)}
+            />
+            <Button type="submit" size="s" disabled={!manual.trim()}>
+              {zh ? '使用模型' : 'Use model'}
+            </Button>
+          </form>
+        </Modal>
+      ) : null}
     </div>
   )
 }
@@ -105,12 +640,36 @@ export const QuickPrompts = ({ draft, disabled, onInsert }: QuickPromptsProps) =
 
   return (
     <div className={styles.configSelectors}>
-      <select
-        aria-label={zh ? '快捷输入' : 'Quick prompts'}
+      <ComposerPicker
+        label={zh ? '快捷输入' : 'Quick prompts'}
+        className={styles.quickControl}
         value=""
+        placeholder={zh ? '快捷输入' : 'Quick prompts'}
+        compactLabel={zh ? '快捷' : 'Prompts'}
         disabled={disabled || saving}
-        onChange={(event) => {
-          const value = event.currentTarget.value
+        options={[
+          ...builtInPresets.map((item, index) => ({
+            value: `built-in:${index}`,
+            label: item[zh ? 0 : 1],
+            group: zh ? '内置预设' : 'Built-in presets',
+          })),
+          ...presets.map((item) => ({
+            value: `custom:${item.id}`,
+            label: item.name,
+            group: zh ? '自定义预设' : 'Custom presets',
+          })),
+          ...(serverEnabled()
+            ? [
+                {
+                  value: 'save',
+                  label: zh ? '保存草稿为预设' : 'Save draft as preset',
+                  group: zh ? '管理' : 'Manage',
+                  disabled: !draft.trim(),
+                },
+              ]
+            : []),
+        ]}
+        onSelect={(value) => {
           if (value === 'save') {
             setError('')
             setName('')
@@ -126,30 +685,7 @@ export const QuickPrompts = ({ draft, disabled, onInsert }: QuickPromptsProps) =
             }
           }
         }}
-      >
-        <option value="">{zh ? '快捷输入' : 'Quick prompts'}</option>
-        <optgroup label={zh ? '内置预设' : 'Built-in presets'}>
-          {builtInPresets.map((item, index) => (
-            <option key={item[1]} value={`built-in:${index}`}>
-              {item[zh ? 0 : 1]}
-            </option>
-          ))}
-        </optgroup>
-        {presets.length > 0 ? (
-          <optgroup label={zh ? '自定义预设' : 'Custom presets'}>
-            {presets.map((item) => (
-              <option key={item.id} value={`custom:${item.id}`}>
-                {item.name}
-              </option>
-            ))}
-          </optgroup>
-        ) : null}
-        {serverEnabled() ? (
-          <option value="save" disabled={!draft.trim()}>
-            {zh ? '保存草稿为预设' : 'Save draft as preset'}
-          </option>
-        ) : null}
-      </select>
+      />
       {name !== null ? (
         <Modal
           closable

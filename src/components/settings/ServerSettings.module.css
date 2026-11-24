@@ -11,7 +11,7 @@
 
 .fields {
   margin: 0;
-  border: 1px solid currentColor;
+  border: 1px solid var(--dsw-alias-border-l3);
   border-radius: 8px;
 }
 
@@ -32,10 +32,10 @@ form.fields {
   box-sizing: border-box;
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid currentColor;
+  border: 1px solid var(--dsw-alias-border-l3);
   border-radius: 6px;
-  background: transparent;
-  color: inherit;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
   font: inherit;
 }
 
@@ -45,4 +45,21 @@ form.fields {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.fields select option,
+.fields select optgroup {
+  background-color: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.fields select option:disabled {
+  color: var(--dsw-alias-label-caption);
+}
+
+.fields input:focus-visible,
+.fields select:focus-visible,
+.fields textarea:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill);
+  outline-offset: 1px;
 }

@@ -1,4 +1,4 @@
-import { effortOptions } from '../../composerOptions.js'
+import { effortOptions, searchStrengths } from '../../composerOptions.js'
 import { BackupError, fail } from './errors.js'
 import {
   EXPORT_FORMAT_VERSION,
@@ -204,6 +204,9 @@ const replyMetadata: Read<NonNullable<ChatMessage['chat_demo']>> = (value) => {
     provider: oneOf('openai')(item.provider),
     model: string(item.model),
     reasoning_effort: oneOf(...effortOptions)(item.reasoning_effort),
+    ...(item.search_strength === undefined
+      ? {}
+      : { search_strength: oneOf(...searchStrengths)(item.search_strength) }),
   }
 }
 

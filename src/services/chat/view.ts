@@ -215,7 +215,14 @@ export const buildReplyView = (reply: AssistantMessage, streaming: boolean): Rep
       result.content.type === 'web_fetch_result' &&
       block.kind === 'deep_search'
     ) {
-      registry.add(result.content.url, result.content.content.title, result.content.published_at)
+      const source = registry.add(
+        result.content.url,
+        result.content.content.title,
+        result.content.published_at
+      )
+      if (reply.provider === 'openai' && source && !searchResults.includes(source)) {
+        searchResults.push(source)
+      }
     }
   }
 

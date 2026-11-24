@@ -8,6 +8,7 @@ import {
   cancelUpload,
   checkImageFileIds,
   describeUploadError,
+  isOpenAIImage,
   uploadAttachment,
   useUploads,
 } from '../attachments.js'
@@ -21,7 +22,6 @@ import {
   clearSentDraft,
   getDraft,
   prepareDraftMessage,
-  setDraftText,
 } from './drafts.js'
 import { createLatestReminder } from './latestReminder.js'
 import { useHistoryConflict } from './remoteHistory.js'
@@ -267,7 +267,7 @@ export const bindChatPersistence = () => {
 
 /** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
 const createReply = (): AssistantMessage => {
-  const { mode, model, effort, config, showSelectors } = useServerState.getState()
+  const { mode, model, effort, searchStrength, config } = useServerState.getState()
   const initial = {
     id: createId(),
     role: 'assistant' as const,
@@ -279,8 +279,11 @@ const createReply = (): AssistantMessage => {
     return {
       ...initial,
       provider: 'openai',
-      model: (showSelectors && model) || config?.defaultModel || '',
-      reasoningEffort: showSelectors ? effort : 'default',
+      model: model || config?.defaultModel || '',
+      reasoningEffort: effort,
+      ...(effort !== 'default' && effort !== 'none' ? { thinking: true } : {}),
+      search: searchStrength !== 'off',
+      searchStrength,
       prefix: false,
     }
   }
@@ -597,10 +600,8 @@ export const sendMessage = (targetSessionId: string | null) => {
   const draft = getDraft(targetSessionId)
   const reply = createReply()
   const openAI = reply.provider === 'openai'
-  const prepared = openAI
-    ? { text: draft.text.trim(), files: [] }
-    : prepareDraftMessage(draft, useUploads.getState().tasks)
-  if (!prepared || (openAI && !prepared.text)) {
+  const prepared = prepareDraftMessage(draft, useUploads.getState().tasks, openAI)
+  if (!prepared) {
     return false
   }
   const { text, files } = prepared
@@ -615,7 +616,11 @@ export const sendMessage = (targetSessionId: string | null) => {
   if (sessionId === null) {
     const session: Session = {
       id: createId(),
-      title: openAI ? Array.from(text.replace(/\s+/g, ' ')).slice(0, 60).join('') : '',
+      title: openAI
+        ? Array.from((text || files[0]?.name || '').replace(/\s+/g, ' '))
+            .slice(0, 60)
+            .join('')
+        : '',
       createdAt: now,
       updatedAt: now,
       messages: [],
@@ -642,7 +647,7 @@ export const sendMessage = (targetSessionId: string | null) => {
       id,
       serverId,
       // 草稿附件已上传成功，每张图片都在上传前检查过长边，超限的已缩小。
-      imageSizeChecked: isImage,
+      imageSizeChecked: isImage && serverId !== null,
       name,
       size,
       isImage,
@@ -661,11 +666,7 @@ export const sendMessage = (targetSessionId: string | null) => {
     ])
   }
   persist(sessionId)
-  if (openAI) {
-    setDraftText(targetSessionId, '')
-  } else {
-    clearSentDraft(targetSessionId)
-  }
+  clearSentDraft(targetSessionId)
   void streamReply(sessionId, reply, { history, question })
   return true
 }
@@ -688,7 +689,11 @@ export const regenerateReply = (sessionId: string, messageId?: string) => {
   }
   const history = path.slice(0, index - 1)
   const reply = createReply()
-  if (reply.provider === 'openai' && !question.content.trim()) {
+  if (
+    reply.provider === 'openai' &&
+    !question.content.trim() &&
+    !question.files.some((file) => file.isImage && isOpenAIImage(file.mimeType))
+  ) {
     return
   }
   updateSession(sessionId, (s) => ({
@@ -715,7 +720,10 @@ export const editMessage = (sessionId: string, messageId: string, content: strin
   const reply = createReply()
   if (
     previous?.role !== 'user' ||
-    (!text && (reply.provider === 'openai' || previous.files.length === 0))
+    (!text &&
+      !previous.files.some(
+        (file) => reply.provider !== 'openai' || (file.isImage && isOpenAIImage(file.mimeType))
+      ))
   ) {
     return false
   }
@@ -1071,8 +1079,16 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           events = streamOpenAI(
             {
               model: initial.model,
-              messages: toOpenAIMessages(request.history, request.question),
+              messages: await toOpenAIMessages(
+                request.history,
+                request.question,
+                async (file) =>
+                  pendingFiles.get(sessionId)?.find((entry) => entry.id === file.id)?.blob ??
+                  (await db.loadFile(file.id)),
+                controller.signal
+              ),
               effort: initial.reasoningEffort,
+              searchStrength: initial.searchStrength ?? (initial.search ? 'medium' : 'off'),
             },
             controller.signal
           )
@@ -1124,6 +1140,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }
           if (reply.provider === 'openai' && event.type === 'message_start') {
             reply = { ...reply, model: event.message.model }
+          }
+          if (
+            reply.provider === 'openai' &&
+            event.type === 'content_block_start' &&
+            event.content_block.type === 'thinking'
+          ) {
+            reply = { ...reply, thinking: true }
           }
           reply = applyEvent(reply, event, Date.now(), blockIndexes)
           if (document.visibilityState === 'hidden') {

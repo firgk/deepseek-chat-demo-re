@@ -15,14 +15,14 @@ import styles from './ServerSettings.module.css'
 
 export const ServerSettings = () => {
   const zh = useSettings((state) => state.locale) === 'zh-CN'
-  const { config, mode, showSelectors, models } = useServerState()
+  const { config, mode, showSelectors } = useServerState()
   const [baseUrl, setBaseUrl] = useState(config?.baseUrl ?? '')
-  const [defaultModel, setDefaultModel] = useState(config?.defaultModel ?? '')
   const [apiKey, setApiKey] = useState('')
   const [removeApiKey, setRemoveApiKey] = useState(false)
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
+  const endpointChanged = baseUrl.trim().replace(/\/+$/, '') !== (config?.baseUrl ?? '')
 
   const run = async (action: () => Promise<void>, success: string) => {
     setStatus('')
@@ -43,7 +43,6 @@ export const ServerSettings = () => {
       async () => {
         await saveServerConfig({
           baseUrl: baseUrl.trim(),
-          defaultModel: defaultModel.trim(),
           ...(removeApiKey || apiKey ? { apiKey: removeApiKey ? '' : apiKey } : {}),
           ...(password ? { password } : {}),
         })
@@ -79,7 +78,9 @@ export const ServerSettings = () => {
             checked={showSelectors}
             onChange={(event) => setSelectorsVisible(event.currentTarget.checked)}
           />
-          {zh ? '在输入框显示模型和思考深度' : 'Show model and reasoning controls in the composer'}
+          {zh
+            ? '在输入框显示模型、思考深度和搜索强度'
+            : 'Show model, reasoning and search controls in the composer'}
         </label>
         <form className={styles.fields} onSubmit={save}>
           <label>
@@ -99,34 +100,29 @@ export const ServerSettings = () => {
               value={apiKey}
               disabled={removeApiKey}
               placeholder={
-                config?.hasApiKey ? (zh ? '已设置，留空保留' : 'Set, leave blank to keep') : ''
+                endpointChanged
+                  ? zh
+                    ? '填写新端点对应的 API Key'
+                    : 'API key for the new endpoint'
+                  : config?.hasApiKey
+                    ? zh
+                      ? '已设置，留空保留'
+                      : 'Set, leave blank to keep'
+                    : ''
               }
               onChange={(event) => setApiKey(event.currentTarget.value)}
             />
           </label>
-          {config?.hasApiKey ? (
+          {config?.hasApiKey || endpointChanged ? (
             <label className={styles.checkbox}>
               <input
                 type="checkbox"
                 checked={removeApiKey}
                 onChange={(event) => setRemoveApiKey(event.currentTarget.checked)}
               />
-              {zh ? '清除已保存的 API Key' : 'Clear the saved API key'}
+              {zh ? '不使用 API Key（清除已保存密钥）' : 'Use no API key (clear saved key)'}
             </label>
           ) : null}
-          <label>
-            {zh ? '默认模型 ID' : 'Default model ID'}
-            <input
-              list="saved-endpoint-models"
-              value={defaultModel}
-              onChange={(event) => setDefaultModel(event.currentTarget.value)}
-            />
-            <datalist id="saved-endpoint-models">
-              {models.map((model) => (
-                <option key={model} value={model} />
-              ))}
-            </datalist>
-          </label>
           <label>
             {zh ? '新站点密码（留空保留）' : 'New site password (leave blank to keep)'}
             <input

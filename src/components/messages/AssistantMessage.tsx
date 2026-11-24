@@ -1,6 +1,6 @@
 import { useServerState } from '../../services/serverState.js'
 import { useSettings } from '../../services/settings.js'
-import { effortLabels } from '../chatInput/ComposerOptions.js'
+import { effortLabels } from '../../services/composerOptions.js'
 import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
 import { memo } from 'react'

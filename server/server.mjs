@@ -43,7 +43,10 @@ function bodyLimit(path) {
   if (path === '/sessions') {
     return 64 * 1024 * 1024
   }
-  if (path.startsWith('/sessions/') || path === '/chat/completions') {
+  if (path === '/chat/completions') {
+    return 32 * 1024 * 1024
+  }
+  if (path.startsWith('/sessions/')) {
     return 8 * 1024 * 1024
   }
   if (path.startsWith('/presets/')) {

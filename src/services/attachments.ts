@@ -12,6 +12,9 @@ import { ACCEPT_FILE_EXTS } from './uploadExts.js'
 export const ACCEPTED_EXTS = ACCEPT_FILE_EXTS
 /** 选择文件对话框的过滤条件 */
 export const ACCEPT = ACCEPTED_EXTS.map((ext) => `.${ext}`).join(',')
+export const OPENAI_IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif'
+export const isOpenAIImage = (mime: string) => OPENAI_IMAGE_ACCEPT.split(',').includes(mime)
+
 /** 单文件大小上限与 Files API 一致 */
 export const MAX_SIZE_MB = 64
 /** 按 user_data 上传的文件（纯文本、代码、表格、电子书）原文件上限更小 */
