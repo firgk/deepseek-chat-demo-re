@@ -86,7 +86,7 @@ function readModelPresets(value) {
   return presets
 }
 
-export async function loadConfig(path) {
+async function readConfigValues(path) {
   let source
   try {
     source = await readFile(path, 'utf8')
@@ -106,6 +106,11 @@ export async function loadConfig(path) {
     }
     values.set(line.slice(0, index).trim(), line.slice(index + 1))
   }
+  return values
+}
+
+export async function loadConfig(path) {
+  const values = await readConfigValues(path)
   return Object.fromEntries(
     Object.entries(KEYS).map(([field, key]) => [
       field,
@@ -114,6 +119,21 @@ export async function loadConfig(path) {
         : validate(field, values.get(key) || ''),
     ])
   )
+}
+
+// Listener settings are startup-only; web settings must not overwrite them.
+export async function loadListenOptions(path, env = process.env) {
+  const values = await readConfigValues(path)
+  const host = (env.HOST || values.get('HOST') || '127.0.0.1').trim()
+  const rawPort = (env.PORT || values.get('PORT') || '3000').trim()
+  const port = Number(rawPort)
+  if (!host || /[\s/\\]/u.test(host)) {
+    throw new Error('Invalid HOST. Enter a listen address or hostname.')
+  }
+  if (!/^\d+$/.test(rawPort) || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('Invalid PORT. Enter an integer from 1 to 65535.')
+  }
+  return { host, port }
 }
 
 export function editConfig(current, body) {

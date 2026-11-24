@@ -35,6 +35,8 @@ Edit `.config`:
 
 ```ini
 SITE_PASSWORD=replace-with-your-password
+HOST=0.0.0.0
+PORT=3000
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=replace-with-your-api-key
 OPENAI_MODEL_PRESETS=[]
@@ -54,6 +56,8 @@ Open [http://127.0.0.1:3000](http://127.0.0.1:3000) and sign in with the site pa
 | Setting              | Description                                                        |
 | -------------------- | ------------------------------------------------------------------ |
 | SITE_PASSWORD        | Required site password                                             |
+| HOST                 | Listen address; use 0.0.0.0 for LAN access                         |
+| PORT                 | Listen port, default 3000                                          |
 | OPENAI_BASE_URL      | API base URL, including the required prefix (e.g. /v1)             |
 | OPENAI_API_KEY       | Server-side API key; may be empty if authentication is unnecessary |
 | OPENAI_MODEL_PRESETS | JSON array of presets, initially []                                |
@@ -116,11 +120,7 @@ Node.js proxy → vision-capable model
 
 ## Deployment and data
 
-Default address: `127.0.0.1:3000`. To allow LAN access:
-
-```sh
-HOST=0.0.0.0 PORT=3000 pnpm start
-```
+Set `HOST=0.0.0.0` and `PORT=3000` in `.config`, then run `pnpm start`. Access the application at `http://server-ip:3000`. For local-only access use `HOST=127.0.0.1`. Environment variables override the file; if omitted from both, the default is `127.0.0.1:3000`. Restart the server after changing listener settings.
 
 For public access, use an HTTPS reverse proxy and pass `X-Forwarded-Proto: https`. Set a strong password and keep `.config` and `.data/` private. Sign in again after server restarts.
 

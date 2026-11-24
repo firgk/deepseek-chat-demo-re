@@ -35,6 +35,8 @@ chmod 600 .config
 
 ```ini
 SITE_PASSWORD=replace-with-your-password
+HOST=0.0.0.0
+PORT=3000
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=replace-with-your-api-key
 OPENAI_MODEL_PRESETS=[]
@@ -54,6 +56,8 @@ pnpm start
 | 配置项               | 说明                                       |
 | -------------------- | ------------------------------------------ |
 | SITE_PASSWORD        | 必填，站点登录密码                         |
+| HOST                 | 监听地址，0.0.0.0 允许局域网访问           |
+| PORT                 | 监听端口，默认 3000                        |
 | OPENAI_BASE_URL      | 接口根地址，包含服务商要求的前缀（如 /v1） |
 | OPENAI_API_KEY       | 服务端 API Key；无需鉴权时可留空           |
 | OPENAI_MODEL_PRESETS | 模型预设 JSON 数组，默认为 []              |
@@ -116,11 +120,7 @@ Node.js 代理 → 视觉模型
 
 ## 部署与数据
 
-默认监听 `127.0.0.1:3000`，局域网访问：
-
-```sh
-HOST=0.0.0.0 PORT=3000 pnpm start
-```
+在 `.config` 中设置 `HOST=0.0.0.0` 和 `PORT=3000`，执行 `pnpm start` 后访问 `http://服务器IP:3000`。仅本机访问时使用 `HOST=127.0.0.1`。环境变量优先于配置文件；均未设置时默认监听 `127.0.0.1:3000`。修改监听配置后需要重启服务。
 
 公网部署使用 HTTPS 反向代理，传递 `X-Forwarded-Proto: https`。设置强密码，不公开 `.config` 或 `.data/`。服务重启后需要重新登录。
 

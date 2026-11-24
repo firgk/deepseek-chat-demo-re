@@ -524,3 +524,31 @@ test('forwards inline image data to the configured model and rejects external UR
   }
   assert.equal(received.length, 1)
 })
+
+test('listener settings use config values, environment overrides and safe defaults', async (t) => {
+  const { configPath, signIn } = await fixture(t)
+  const { loadListenOptions } = await import('./config.mjs')
+  assert.deepEqual(await loadListenOptions(configPath, {}), { host: '127.0.0.1', port: 3000 })
+  const original = await readFile(configPath, 'utf8')
+  await writeFile(configPath, original + 'HOST=0.0.0.0\nPORT=8080\n')
+  assert.deepEqual(await loadListenOptions(configPath, {}), { host: '0.0.0.0', port: 8080 })
+  assert.deepEqual(await loadListenOptions(configPath, { HOST: '127.0.0.1', PORT: '9000' }), {
+    host: '127.0.0.1',
+    port: 9000,
+  })
+  const request = await signIn()
+  assert.equal(
+    (
+      await request('/api/config', {
+        method: 'PUT',
+        body: { addModelPreset: { model: 'm', effort: 'default' } },
+      })
+    ).status,
+    200
+  )
+  assert.deepEqual(await loadListenOptions(configPath, {}), { host: '0.0.0.0', port: 8080 })
+  for (const PORT of ['abc', '0', '-1', '65536', '3.5', '0xBB8']) {
+    await assert.rejects(loadListenOptions(configPath, { PORT }), /Invalid PORT/)
+  }
+  await assert.rejects(loadListenOptions(configPath, { HOST: 'http://localhost' }), /Invalid HOST/)
+})

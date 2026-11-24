@@ -1,13 +1,16 @@
+import { fileURLToPath } from 'node:url'
+import { loadListenOptions } from './config.mjs'
 import { createChatServer } from './server.mjs'
 
 try {
-  const port = Number(process.env.PORT || '3000')
-  const server = await createChatServer()
+  const configPath = fileURLToPath(new URL('../.config', import.meta.url))
+  const { host, port } = await loadListenOptions(configPath)
+  const server = await createChatServer({ configPath })
   server.once('error', () => {
     process.stderr.write('Unable to listen on port ' + port + '.\n')
     process.exitCode = 1
   })
-  server.listen(port, process.env.HOST || '127.0.0.1', () => {
+  server.listen(port, host, () => {
     process.stdout.write('Chat server listening on port ' + server.address().port + '.\n')
   })
 } catch (error) {

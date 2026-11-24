@@ -1,6 +1,10 @@
 # Copy to .config and set a site password before starting the server.
 SITE_PASSWORD=
 
+# Listen address and port. Use 127.0.0.1 for local-only access.
+HOST=0.0.0.0
+PORT=3000
+
 # Optional OpenAI-compatible endpoint, for example https://api.openai.com/v1.
 OPENAI_BASE_URL=
 OPENAI_API_KEY=
