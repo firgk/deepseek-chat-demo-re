@@ -39,6 +39,7 @@ HOST=0.0.0.0
 PORT=3000
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=replace-with-your-api-key
+OPENAI_SYSTEM_PROMPT=你是一个 AI 问答助手。
 OPENAI_MODEL_PRESETS=[]
 ```
 
@@ -60,9 +61,12 @@ Open [http://127.0.0.1:3000](http://127.0.0.1:3000) and sign in with the site pa
 | PORT                 | Listen port, default 3000                                          |
 | OPENAI_BASE_URL      | API base URL, including the required prefix (e.g. /v1)             |
 | OPENAI_API_KEY       | Server-side API key; may be empty if authentication is unnecessary |
+| OPENAI_SYSTEM_PROMPT | System prompt; empty disables the identity prompt                  |
 | OPENAI_MODEL_PRESETS | JSON array of presets, initially []                                |
 
 On sign-in, the last selected preset is restored, or the first preset is applied. With no presets, select a model manually; reasoning starts at default.
+
+Edit the system prompt in Settings → Data → Model API. Saved changes apply to the next request without restarting. The config supports plain single-line text or a JSON string with escaped newlines (e.g. `OPENAI_SYSTEM_PROMPT="You are an AI assistant.\nAnswer concisely."`). Web tool instructions are appended separately.
 
 Reasoning options: `default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Not every model supports all values.
 

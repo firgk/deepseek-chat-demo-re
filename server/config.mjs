@@ -3,10 +3,13 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { HttpError } from './http.mjs'
 import { validateSearchStrength } from './search-policy.mjs'
 
+export const DEFAULT_SYSTEM_PROMPT = '你是一个 AI 问答助手。'
+
 const KEYS = {
   password: 'SITE_PASSWORD',
   baseUrl: 'OPENAI_BASE_URL',
   apiKey: 'OPENAI_API_KEY',
+  systemPrompt: 'OPENAI_SYSTEM_PROMPT',
   modelPresets: 'OPENAI_MODEL_PRESETS',
 }
 
@@ -43,6 +46,30 @@ function validate(field, value) {
     return url.href.replace(/\/+$/, '')
   }
   return trimmed
+}
+
+function validateSystemPrompt(value) {
+  if (
+    typeof value !== 'string' ||
+    value.length > 10000 ||
+    /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/u.test(value)
+  ) {
+    throw new HttpError(400, 'Invalid OPENAI_SYSTEM_PROMPT (maximum 10000 characters).')
+  }
+  return value.replace(/\r\n?/g, '\n')
+}
+
+function readSystemPrompt(value) {
+  if (value === undefined) return DEFAULT_SYSTEM_PROMPT
+  // Plain single-line text or a JSON string for multiline text.
+  if (value.trimStart().startsWith('"')) {
+    try {
+      return validateSystemPrompt(JSON.parse(value))
+    } catch {
+      throw new HttpError(400, 'Invalid OPENAI_SYSTEM_PROMPT JSON string.')
+    }
+  }
+  return validateSystemPrompt(value)
 }
 
 function validateModelPreset(value) {
@@ -116,7 +143,9 @@ export async function loadConfig(path) {
       field,
       field === 'modelPresets'
         ? readModelPresets(values.get(key))
-        : validate(field, values.get(key) || ''),
+        : field === 'systemPrompt'
+          ? readSystemPrompt(values.get(key))
+          : validate(field, values.get(key) || ''),
     ])
   )
 }
@@ -160,6 +189,10 @@ export function editConfig(current, body) {
   return {
     baseUrl,
     modelPresets,
+    systemPrompt:
+      body.systemPrompt === undefined
+        ? current.systemPrompt
+        : validateSystemPrompt(body.systemPrompt),
     apiKey: body.apiKey === undefined ? current.apiKey : validate('apiKey', body.apiKey),
     password: body.password === undefined ? current.password : validate('password', body.password),
   }
@@ -172,7 +205,11 @@ export async function writeConfig(path, config) {
     const values = new Map(
       Object.entries(KEYS).map(([field, key]) => [
         key,
-        field === 'modelPresets' ? JSON.stringify(config[field] ?? []) : config[field],
+        field === 'modelPresets'
+          ? JSON.stringify(config[field] ?? [])
+          : field === 'systemPrompt'
+            ? JSON.stringify(config[field] ?? DEFAULT_SYSTEM_PROMPT)
+            : config[field],
       ])
     )
     const updated = new Set()
@@ -202,9 +239,10 @@ export async function writeConfig(path, config) {
   }
 }
 
-export const publicConfig = ({ baseUrl, modelPresets, apiKey }) => ({
+export const publicConfig = ({ baseUrl, modelPresets, systemPrompt, apiKey }) => ({
   baseUrl,
   modelPresets,
+  systemPrompt,
   hasApiKey: Boolean(apiKey),
 })
 

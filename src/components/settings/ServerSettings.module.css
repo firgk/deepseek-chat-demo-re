@@ -63,3 +63,12 @@ form.fields {
   outline: 2px solid var(--dsw-alias-button-primary-fill);
   outline-offset: 1px;
 }
+
+.fields textarea {
+  resize: vertical;
+}
+
+.hint {
+  color: var(--dsw-alias-label-caption);
+  line-height: 1.5;
+}

@@ -8,4 +8,6 @@ PORT=3000
 # Optional OpenAI-compatible endpoint, for example https://api.openai.com/v1.
 OPENAI_BASE_URL=
 OPENAI_API_KEY=
+# Plain text or a JSON string with escaped newlines. Empty disables the identity prompt.
+OPENAI_SYSTEM_PROMPT=你是一个 AI 问答助手。
 OPENAI_MODEL_PRESETS=[]

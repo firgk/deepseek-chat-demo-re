@@ -133,6 +133,7 @@ test('updates config atomically, redacts secrets, and rotates the login password
     baseUrl: 'https://example.org/v1',
     modelPresets: [],
     hasApiKey: true,
+    systemPrompt: '你是一个 AI 问答助手。',
   })
   const update = {
     baseUrl: 'https://example.org/v1/',
@@ -266,7 +267,7 @@ test('uses configured provider credentials and forwards only text chat fields', 
       'Bearer secret-token',
       JSON.stringify({
         model: 'test-model',
-        messages,
+        messages: [{ role: 'system', content: '你是一个 AI 问答助手。' }, ...messages],
         stream: true,
         reasoning_effort: 'xhigh',
       }),
@@ -346,6 +347,7 @@ test('requires entering or clearing the old key before it can be sent to a diffe
     ...provider,
     modelPresets: [],
     hasApiKey: false,
+    systemPrompt: '你是一个 AI 问答助手。',
   })
   assert.match(await readFile(configPath, 'utf8'), /# Custom note\nOTHER=value/)
   const another = { ...provider, baseUrl: 'https://another.example/v1' }
@@ -411,6 +413,7 @@ test('reloads settings, versioned history, and prompt presets when the server re
     baseUrl: '',
     modelPresets: [{ model: 'changed', effort: 'xhigh', searchStrength: 'off' }],
     hasApiKey: true,
+    systemPrompt: '你是一个 AI 问答助手。',
   })
   assert.deepEqual(await (await afterRestart('/api/sessions/persisted')).json(), {
     version: 1,
@@ -444,6 +447,7 @@ test('ignores obsolete defaults and removes them on config save, preserving othe
   assert.deepEqual(await (await request('/api/config')).json(), {
     baseUrl: 'https://example.org/v1',
     hasApiKey: true,
+    systemPrompt: '你是一个 AI 问答助手。',
     modelPresets: [],
   })
   assert.equal(
@@ -513,7 +517,10 @@ test('forwards inline image data to the configured model and rejects external UR
   const result = await send(messages)
   assert.equal(result.status, 200)
   assert.match(await result.text(), /\[DONE\]/)
-  assert.deepEqual(received[0].messages, messages)
+  assert.deepEqual(received[0].messages, [
+    { role: 'system', content: '你是一个 AI 问答助手。' },
+    ...messages,
+  ])
   for (const part of [
     { type: 'image_url', image_url: { url: 'http://127.0.0.1/private' } },
     { type: 'file', file: { file_id: 'foo' } },
@@ -551,4 +558,49 @@ test('listener settings use config values, environment overrides and safe defaul
     await assert.rejects(loadListenOptions(configPath, { PORT }), /Invalid PORT/)
   }
   await assert.rejects(loadListenOptions(configPath, { HOST: 'http://localhost' }), /Invalid HOST/)
+})
+
+test('system prompt is editable, persists multiline text and applies without restart', async (t) => {
+  const received = []
+  const upstream = createServer(async (req, res) => {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    received.push(JSON.parse(Buffer.concat(chunks).toString()))
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+    res.end('data: [DONE]\n\n')
+  })
+  t.after(
+    () =>
+      new Promise((resolve) => {
+        upstream.close(resolve)
+        upstream.closeAllConnections()
+      })
+  )
+  const { configPath, signIn, restart } = await fixture(t, await listen(upstream))
+  let request = await signIn()
+  const put = (body) => request('/api/config', { method: 'PUT', body })
+  const chat = async () => {
+    const response = await request('/api/chat/completions', {
+      method: 'POST',
+      body: { model: 'm', messages: [{ role: 'user', content: 'Hello' }] },
+    })
+    assert.equal(response.status, 200)
+    await response.text()
+    return received.at(-1).messages
+  }
+  const prompt = '你是代码助手。\n请简洁回答。\n保留 "引号" 与 \\ 路径'
+  assert.equal((await put({ systemPrompt: prompt })).status, 200)
+  assert.equal((await chat())[0].content, prompt)
+  assert.ok(
+    (await readFile(configPath, 'utf8')).includes('OPENAI_SYSTEM_PROMPT=' + JSON.stringify(prompt))
+  )
+  assert.equal((await put({ systemPrompt: 'x'.repeat(10001) })).status, 400)
+  assert.equal((await put({ systemPrompt: 123 })).status, 400)
+  assert.equal((await put({ addModelPreset: { model: 'm', effort: 'default' } })).status, 200)
+  await restart()
+  request = await signIn()
+  assert.equal((await (await request('/api/config')).json()).systemPrompt, prompt)
+  assert.equal((await chat())[0].content, prompt)
+  assert.equal((await put({ systemPrompt: '' })).status, 200)
+  assert.deepEqual(await chat(), [{ role: 'user', content: 'Hello' }])
 })

@@ -16,6 +16,7 @@ export const modelPresetKey = (preset: ModelPreset) =>
 export type ServerConfig = {
   baseUrl: string
   hasApiKey: boolean
+  systemPrompt?: string
   modelPresets?: ModelPreset[]
 }
 export type PromptPreset = { id: string; name: string; text: string }
@@ -182,7 +183,7 @@ export const loadServerSettings = async () => {
 }
 
 export const saveServerConfig = async (
-  fields: Partial<Pick<ServerConfig, 'baseUrl'>> & {
+  fields: Partial<Pick<ServerConfig, 'baseUrl' | 'systemPrompt'>> & {
     password?: string
     apiKey?: string
   }

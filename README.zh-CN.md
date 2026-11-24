@@ -39,6 +39,7 @@ HOST=0.0.0.0
 PORT=3000
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=replace-with-your-api-key
+OPENAI_SYSTEM_PROMPT=你是一个 AI 问答助手。
 OPENAI_MODEL_PRESETS=[]
 ```
 
@@ -60,9 +61,12 @@ pnpm start
 | PORT                 | 监听端口，默认 3000                        |
 | OPENAI_BASE_URL      | 接口根地址，包含服务商要求的前缀（如 /v1） |
 | OPENAI_API_KEY       | 服务端 API Key；无需鉴权时可留空           |
+| OPENAI_SYSTEM_PROMPT | 系统提示词，留空不注入身份提示词           |
 | OPENAI_MODEL_PRESETS | 模型预设 JSON 数组，默认为 []              |
 
 登录时恢复上次选择的预设，否则使用第一个预设；没有预设时手动选择模型，思考强度默认为 default。
+
+在「设置 → 数据管理 → 模型 API」编辑系统提示词，保存后下一次请求生效，无需重启。配置文件支持单行纯文本或 JSON 字符串（例如 `OPENAI_SYSTEM_PROMPT="你是 AI 助手。\n请简洁回答。"`），联网工具规则独立追加。
 
 思考强度：`default`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。模型不一定支持全部档位。
 

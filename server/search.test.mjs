@@ -86,6 +86,12 @@ test('web search assembles streamed arguments, runs function, and streams only t
   assert.equal(requests.length, 2)
   assert.equal(requests[0].tools[0].function.name, 'web_search')
   assert.equal(requests[0].tool_choice, 'auto')
+  for (const request of requests) {
+    assert.equal(request.messages.filter((m) => m.role === 'system').length, 1)
+    assert.match(request.messages[0].content, /^你是一个 AI 问答助手。/)
+    assert.match(request.messages[0].content, /Use web_search/)
+    assert.match(request.messages[0].content, /fetch_url/)
+  }
   assert.equal(requests[1].messages.at(-2).tool_calls[0].id, 'call_1')
   assert.equal(requests[1].messages.at(-1).role, 'tool')
   assert.equal(requests[1].messages.at(-1).tool_call_id, 'call_1')

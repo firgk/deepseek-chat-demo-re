@@ -18,6 +18,7 @@ export const ServerSettings = () => {
   const { config, mode, showSelectors } = useServerState()
   const [baseUrl, setBaseUrl] = useState(config?.baseUrl ?? '')
   const [apiKey, setApiKey] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState(config?.systemPrompt ?? '你是一个 AI 问答助手。')
   const [removeApiKey, setRemoveApiKey] = useState(false)
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState('')
@@ -43,6 +44,7 @@ export const ServerSettings = () => {
       async () => {
         await saveServerConfig({
           baseUrl: baseUrl.trim(),
+          systemPrompt,
           ...(removeApiKey || apiKey ? { apiKey: removeApiKey ? '' : apiKey } : {}),
           ...(password ? { password } : {}),
         })
@@ -123,6 +125,23 @@ export const ServerSettings = () => {
               {zh ? '不使用 API Key（清除已保存密钥）' : 'Use no API key (clear saved key)'}
             </label>
           ) : null}
+          <label>
+            {zh ? '系统提示词' : 'System prompt'}
+            <textarea
+              rows={4}
+              maxLength={10000}
+              value={systemPrompt}
+              placeholder={
+                zh ? '留空则不注入身份提示词' : 'Leave empty to omit the identity prompt'
+              }
+              onChange={(event) => setSystemPrompt(event.currentTarget.value)}
+            />
+            <small className={styles.hint}>
+              {zh
+                ? '应用于所有 OpenAI 对话，保存后生效；联网规则独立追加。'
+                : 'Applies to all OpenAI chats after saving. Web tool rules are appended separately.'}
+            </small>
+          </label>
           <label>
             {zh ? '新站点密码（留空保留）' : 'New site password (leave blank to keep)'}
             <input

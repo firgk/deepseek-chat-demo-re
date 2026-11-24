@@ -40,6 +40,9 @@ function cookieToken(request) {
 }
 
 function bodyLimit(path) {
+  if (path === '/config') {
+    return 128 * 1024
+  }
   if (path === '/sessions') {
     return 64 * 1024 * 1024
   }
