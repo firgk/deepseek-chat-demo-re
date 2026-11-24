@@ -31,9 +31,7 @@ async function fixture(t, upstream = '') {
   const configPath = join(directory, '.config')
   await writeFile(
     configPath,
-    'SITE_PASSWORD=first=password\nOPENAI_BASE_URL=' +
-      upstream +
-      '\nOPENAI_API_KEY=secret-token\nOPENAI_DEFAULT_MODEL=test-model\n'
+    'SITE_PASSWORD=first=password\nOPENAI_BASE_URL=' + upstream + '\nOPENAI_API_KEY=secret-token\n'
   )
   const { createChatServer } = await import('./server.mjs')
   async function start() {
@@ -133,14 +131,11 @@ test('updates config atomically, redacts secrets, and rotates the login password
   const request = await signIn()
   assert.deepEqual(await (await request('/api/config')).json(), {
     baseUrl: 'https://example.org/v1',
-    defaultModel: 'test-model',
-    defaultReasoningEffort: 'default',
     modelPresets: [],
     hasApiKey: true,
   })
   const update = {
     baseUrl: 'https://example.org/v1/',
-    defaultModel: 'next',
     password: 'new=secret',
   }
   assert.equal((await request('/api/config', { method: 'PUT', body: update })).status, 200)
@@ -252,7 +247,14 @@ test('uses configured provider credentials and forwards only text chat fields', 
   const messages = [{ role: 'user', content: 'Hello' }]
   const response = await request('/api/chat/completions', {
     method: 'POST',
-    body: { messages, reasoning_effort: 'xhigh', tools: [], apiKey: 'attacker-key', stream: false },
+    body: {
+      model: 'test-model',
+      messages,
+      reasoning_effort: 'xhigh',
+      tools: [],
+      apiKey: 'attacker-key',
+      stream: false,
+    },
   })
   assert.equal(response.status, 200)
   assert.match(response.headers.get('content-type'), /^text\/event-stream/)
@@ -291,7 +293,7 @@ test('rejects provider redirects and removes sensitive data from upstream errors
   assert.equal((await request('/api/models')).status, 502)
   const response = await request('/api/chat/completions', {
     method: 'POST',
-    body: { messages: [{ role: 'user', content: 'Hello' }] },
+    body: { model: 'test-model', messages: [{ role: 'user', content: 'Hello' }] },
   })
   assert.equal(response.status, 200)
   const body = await response.text()
@@ -317,7 +319,7 @@ test('cancels an upstream stream when the client stops reading', async (t) => {
   const request = await (await fixture(t, (await listen(upstream)) + '/v1')).signIn()
   const response = await request('/api/chat/completions', {
     method: 'POST',
-    body: { messages: [{ role: 'user', content: 'Hello' }] },
+    body: { model: 'test-model', messages: [{ role: 'user', content: 'Hello' }] },
   })
   assert.equal(response.status, 200)
   const reader = response.body.getReader()
@@ -336,13 +338,12 @@ test('requires entering or clearing the old key before it can be sent to a diffe
   const { configPath, signIn } = await fixture(t, 'https://old.example/v1')
   await writeFile(configPath, (await readFile(configPath, 'utf8')) + '# Custom note\nOTHER=value\n')
   const request = await signIn()
-  const provider = { baseUrl: 'https://new.example/v1', defaultModel: 'test-model' }
+  const provider = { baseUrl: 'https://new.example/v1' }
   const put = (body) => request('/api/config', { method: 'PUT', body })
   assert.equal((await put(provider)).status, 400)
   assert.equal((await (await request('/api/config')).json()).baseUrl, 'https://old.example/v1')
   assert.deepEqual(await (await put({ ...provider, apiKey: '' })).json(), {
     ...provider,
-    defaultReasoningEffort: 'default',
     modelPresets: [],
     hasApiKey: false,
   })
@@ -362,7 +363,11 @@ test('suggests changing reasoning effort when a provider rejects a request that 
   const request = await (await fixture(t, await listen(upstream))).signIn()
   const response = await request('/api/chat/completions', {
     method: 'POST',
-    body: { messages: [{ role: 'user', content: 'Hello' }], reasoning_effort: 'high' },
+    body: {
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'Hello' }],
+      reasoning_effort: 'high',
+    },
   })
   assert.equal(response.status, 422)
   const { error } = await response.json()
@@ -390,7 +395,10 @@ test('reloads settings, versioned history, and prompt presets when the server re
     (
       await request('/api/config', {
         method: 'PUT',
-        body: { baseUrl: '', defaultModel: 'changed', defaultReasoningEffort: 'xhigh' },
+        body: {
+          baseUrl: '',
+          addModelPreset: { model: 'changed', effort: 'xhigh', searchStrength: 'off' },
+        },
       })
     ).status,
     200
@@ -401,9 +409,7 @@ test('reloads settings, versioned history, and prompt presets when the server re
   const afterRestart = await signIn()
   assert.deepEqual(await (await afterRestart('/api/config')).json(), {
     baseUrl: '',
-    defaultModel: 'changed',
-    defaultReasoningEffort: 'xhigh',
-    modelPresets: [],
+    modelPresets: [{ model: 'changed', effort: 'xhigh', searchStrength: 'off' }],
     hasApiKey: true,
   })
   assert.deepEqual(await (await afterRestart('/api/sessions/persisted')).json(), {
@@ -426,41 +432,37 @@ test('accepts archived session IDs when migrating local history', async (t) => {
   assert.deepEqual(await (await request(path)).json(), { version: 1, session })
 })
 
-test('validates saved default reasoning effort and preserves it across legacy config updates', async (t) => {
-  const { signIn, configPath } = await fixture(t)
+test('ignores obsolete defaults and removes them on config save, preserving other settings', async (t) => {
+  const { configPath, restart, signIn } = await fixture(t, 'https://example.org/v1')
+  await writeFile(
+    configPath,
+    (await readFile(configPath, 'utf8')) +
+      'OPENAI_DEFAULT_MODEL=obsolete\nOPENAI_DEFAULT_REASONING_EFFORT=invalid\nOTHER=value\n'
+  )
+  await restart()
   const request = await signIn()
-  const put = (body) => request('/api/config', { method: 'PUT', body })
-  const base = { baseUrl: '', defaultModel: 'm' }
-  assert.equal((await put({ ...base, defaultReasoningEffort: 'invalid' })).status, 400)
-  assert.equal((await put({ ...base, defaultReasoningEffort: 'high' })).status, 200)
-  assert.match(await readFile(configPath, 'utf8'), /OPENAI_DEFAULT_REASONING_EFFORT=high/)
-  const result = await (await put(base)).json()
-  assert.equal(result.defaultReasoningEffort, 'high')
-})
-
-test('composer saves model defaults without changing endpoint or credentials', async (t) => {
-  const { signIn, configPath } = await fixture(t, 'https://example.org/v1')
-  const request = await signIn()
-  const before = await (await request('/api/config')).json()
-  const response = await request('/api/config', {
-    method: 'PUT',
-    body: { defaultModel: 'composer-model', defaultReasoningEffort: 'high' },
+  assert.deepEqual(await (await request('/api/config')).json(), {
+    baseUrl: 'https://example.org/v1',
+    hasApiKey: true,
+    modelPresets: [],
   })
+  assert.equal(
+    (
+      await request('/api/chat/completions', {
+        method: 'POST',
+        body: { messages: [{ role: 'user', content: 'Hello' }] },
+      })
+    ).status,
+    400
+  )
+  const preset = { model: 'chosen', effort: 'high', searchStrength: 'off' }
+  const response = await request('/api/config', { method: 'PUT', body: { addModelPreset: preset } })
   assert.equal(response.status, 200)
-  const after = await response.json()
-  assert.deepEqual(after, {
-    ...before,
-    defaultModel: 'composer-model',
-    defaultReasoningEffort: 'high',
-  })
-  const config = await readFile(configPath, 'utf8')
-  assert.match(config, /OPENAI_DEFAULT_MODEL=composer-model/)
-  assert.match(config, /OPENAI_DEFAULT_REASONING_EFFORT=high/)
-  const preserved = await request('/api/config', {
-    method: 'PUT',
-    body: { baseUrl: before.baseUrl },
-  })
-  assert.deepEqual(await preserved.json(), after)
+  assert.deepEqual((await response.json()).modelPresets, [preset])
+  const saved = await readFile(configPath, 'utf8')
+  assert.doesNotMatch(saved, /OPENAI_DEFAULT_/)
+  assert.match(saved, /OTHER=value/)
+  assert.match(saved, /OPENAI_API_KEY=secret-token/)
 })
 
 test('model presets support multiple efforts, deduplication, deletion and server restart', async (t) => {
@@ -505,7 +507,7 @@ test('forwards inline image data to the configured model and rejects external UR
   )
   const request = await (await fixture(t, (await listen(upstream)) + '/v1')).signIn()
   const send = (messages) =>
-    request('/api/chat/completions', { method: 'POST', body: { messages } })
+    request('/api/chat/completions', { method: 'POST', body: { model: 'test-model', messages } })
   const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,aW1hZ2U=' } }
   const messages = [{ role: 'user', content: [{ type: 'text', text: 'Describe this' }, image] }]
   const result = await send(messages)

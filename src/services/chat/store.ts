@@ -267,7 +267,7 @@ export const bindChatPersistence = () => {
 
 /** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
 const createReply = (): AssistantMessage => {
-  const { mode, model, effort, searchStrength, config } = useServerState.getState()
+  const { mode, model, effort, searchStrength } = useServerState.getState()
   const initial = {
     id: createId(),
     role: 'assistant' as const,
@@ -279,7 +279,7 @@ const createReply = (): AssistantMessage => {
     return {
       ...initial,
       provider: 'openai',
-      model: model || config?.defaultModel || '',
+      model,
       reasoningEffort: effort,
       ...(effort !== 'default' && effort !== 'none' ? { thinking: true } : {}),
       search: searchStrength !== 'off',
@@ -600,6 +600,9 @@ export const sendMessage = (targetSessionId: string | null) => {
   const draft = getDraft(targetSessionId)
   const reply = createReply()
   const openAI = reply.provider === 'openai'
+  if (openAI && !reply.model) {
+    return false
+  }
   const prepared = prepareDraftMessage(draft, useUploads.getState().tasks, openAI)
   if (!prepared) {
     return false
@@ -691,8 +694,9 @@ export const regenerateReply = (sessionId: string, messageId?: string) => {
   const reply = createReply()
   if (
     reply.provider === 'openai' &&
-    !question.content.trim() &&
-    !question.files.some((file) => file.isImage && isOpenAIImage(file.mimeType))
+    (!reply.model ||
+      (!question.content.trim() &&
+        !question.files.some((file) => file.isImage && isOpenAIImage(file.mimeType))))
   ) {
     return
   }
@@ -720,6 +724,7 @@ export const editMessage = (sessionId: string, messageId: string, content: strin
   const reply = createReply()
   if (
     previous?.role !== 'user' ||
+    (reply.provider === 'openai' && !reply.model) ||
     (!text &&
       !previous.files.some(
         (file) => reply.provider !== 'openai' || (file.isImage && isOpenAIImage(file.mimeType))

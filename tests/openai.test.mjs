@@ -231,8 +231,6 @@ test('hidden selectors preserve the selected model and effort for new and existi
     config: {
       baseUrl: 'https://example.com/v1',
       hasApiKey: false,
-      defaultModel: 'configured-model',
-      defaultReasoningEffort: 'default',
     },
     model: 'chosen-model',
     effort: 'high',
@@ -278,20 +276,17 @@ test('hidden selectors preserve the selected model and effort for new and existi
   }
 })
 
-test('saved model and effort initialize composer and model presets can be saved, applied and deleted', async (t) => {
+test('composer requires manual selection without presets and restores saved presets', async (t) => {
   const {
     useServerState,
     loadServerSettings,
     chooseModel,
     chooseEffort,
-    restoreModelDefaults,
     changeModelPreset,
     selectModelPreset,
   } = await import('../src/services/serverState.ts')
   let config = {
     baseUrl: 'https://example.com/v1',
-    defaultModel: 'preferred',
-    defaultReasoningEffort: 'high',
     hasApiKey: false,
     modelPresets: [],
   }
@@ -316,15 +311,14 @@ test('saved model and effort initialize composer and model presets can be saved,
     assert.fail('Unexpected URL ' + url)
   })
   await loadServerSettings()
-  assert.equal(useServerState.getState().model, 'preferred')
-  assert.equal(useServerState.getState().effort, 'high')
+  assert.equal(useServerState.getState().model, '')
+  assert.equal(useServerState.getState().effort, 'default')
+  chooseModel('preferred')
+  chooseEffort('high')
   chooseModel('other')
   assert.equal(useServerState.getState().effort, 'default')
   chooseEffort('low')
   chooseModel('preferred')
-  assert.equal(useServerState.getState().effort, 'high')
-  chooseEffort('none')
-  restoreModelDefaults()
   assert.equal(useServerState.getState().effort, 'high')
   chooseModel('other')
   chooseEffort('xhigh')
@@ -342,6 +336,9 @@ test('saved model and effort initialize composer and model presets can be saved,
   await changeModelPreset(preset, true)
   assert.deepEqual(config.modelPresets, [])
   assert.equal(useServerState.getState().model, 'other')
+  await loadServerSettings()
+  assert.equal(useServerState.getState().model, '')
+  assert.equal(useServerState.getState().effort, 'default')
 })
 
 test('OpenAI search and reasoning reuse the DeepSeek reply timeline', async (t) => {

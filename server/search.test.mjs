@@ -48,8 +48,12 @@ async function fixture(t, reply, searchFn, strength = 'medium', fetchFn) {
   })
   const endpoint = await listen(t, async (_request, response) => {
     await streamChat(
-      { baseUrl, defaultModel: 'model', apiKey: 'test-secret' },
-      { messages: [{ role: 'user', content: 'Latest Node version?' }], search_strength: strength },
+      { baseUrl, apiKey: 'test-secret' },
+      {
+        model: 'model',
+        messages: [{ role: 'user', content: 'Latest Node version?' }],
+        search_strength: strength,
+      },
       response,
       searchFn,
       fetchFn

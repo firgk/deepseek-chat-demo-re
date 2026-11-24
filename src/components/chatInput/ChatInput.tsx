@@ -24,7 +24,7 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
-import { ensureApiKey, openSettings } from '../settings/settingsDialogState.js'
+import { ensureApiKey } from '../settings/settingsDialogState.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
 import { ACCEPT, OPENAI_IMAGE_ACCEPT, useUploads } from '../../services/attachments.js'
@@ -48,6 +48,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const t = useTranslate()
   const draft = useDrafts((state) => state.drafts.get(sessionId) ?? EMPTY_DRAFT)
   const openAI = useServerState((state) => state.mode) === 'openai'
+  const model = useServerState((state) => state.model)
   const { text, attachments } = draft
   const setText = (value: string) => setDraftText(sessionId, value)
   const draftReady = useUploads((state) => prepareDraftMessage(draft, state.tasks, openAI) !== null)
@@ -147,7 +148,12 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const recording = voice.status === 'recording'
 
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
-  const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
+  const canSend =
+    !importingHistory &&
+    !streaming &&
+    voice.status === 'idle' &&
+    draftReady &&
+    (!openAI || Boolean(model))
 
   const insertQuickPrompt = (preset: string) => {
     const textarea = textareaRef.current
@@ -168,9 +174,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     ) {
       return
     }
-    const provider = useServerState.getState()
-    if (openAI && !(provider.model || provider.config?.defaultModel)) {
-      openSettings('data')
+    if (openAI && !useServerState.getState().model) {
       return
     }
     // 文本与上传完成态由提交动作读取最新快照，不使用上一次渲染的草稿。

@@ -15,8 +15,6 @@ export const modelPresetKey = (preset: ModelPreset) =>
 
 export type ServerConfig = {
   baseUrl: string
-  defaultModel: string
-  defaultReasoningEffort: ReasoningEffort
   hasApiKey: boolean
   modelPresets?: ModelPreset[]
 }
@@ -84,26 +82,8 @@ export const setSelectorsVisible = (showSelectors: boolean) => {
 export const chooseModel = (model: string) => {
   useServerState.setState((state) => ({
     model,
-    effort:
-      state.efforts.get(model) ??
-      (model === state.config?.defaultModel
-        ? (state.config.defaultReasoningEffort ?? 'default')
-        : 'default'),
+    effort: state.efforts.get(model) ?? 'default',
   }))
-}
-
-export const restoreModelDefaults = () => {
-  const { config } = useServerState.getState()
-  if (config) {
-    useServerState.setState((state) => ({
-      model: config.defaultModel,
-      effort: config.defaultReasoningEffort ?? 'default',
-      efforts: new Map(state.efforts).set(
-        config.defaultModel,
-        config.defaultReasoningEffort ?? 'default'
-      ),
-    }))
-  }
 }
 
 export const chooseSearchStrength = (searchStrength: SearchStrength) => {
@@ -169,13 +149,8 @@ export const getModels = async () => {
   }
 }
 
-export const loadServerSettings = async () => {
-  const [config, { presets }] = await Promise.all([
-    serverRequest<ServerConfig>('/api/config'),
-    serverRequest<{ presets: PromptPreset[] }>('/api/presets'),
-  ])
-  useServerState.setState({ config, presets, efforts: new Map() })
-  restoreModelDefaults()
+const restoreModelSelection = (config: ServerConfig) => {
+  useServerState.setState({ model: '', effort: 'default', efforts: new Map() })
   const presetsList = config.modelPresets ?? []
   const preferredPreset = storedPreference('chat-demo:model-preset')
   const preset =
@@ -188,6 +163,15 @@ export const loadServerSettings = async () => {
   if (preset) {
     selectModelPreset(preset)
   }
+}
+
+export const loadServerSettings = async () => {
+  const [config, { presets }] = await Promise.all([
+    serverRequest<ServerConfig>('/api/config'),
+    serverRequest<{ presets: PromptPreset[] }>('/api/presets'),
+  ])
+  useServerState.setState({ config, presets, models: [], manualModels: [] })
+  restoreModelSelection(config)
   const preferredMode = storedPreference('chat-demo:provider')
   useServerState.setState({
     mode: config.baseUrl && preferredMode !== 'deepseek' ? 'openai' : 'deepseek',
@@ -198,7 +182,7 @@ export const loadServerSettings = async () => {
 }
 
 export const saveServerConfig = async (
-  fields: Partial<Pick<ServerConfig, 'baseUrl' | 'defaultModel' | 'defaultReasoningEffort'>> & {
+  fields: Partial<Pick<ServerConfig, 'baseUrl'>> & {
     password?: string
     apiKey?: string
   }
@@ -213,14 +197,9 @@ export const saveServerConfig = async (
     return
   }
   const endpointChanged = oldConfig?.baseUrl !== config.baseUrl
-  const defaultChanged =
-    oldConfig?.defaultModel !== config.defaultModel ||
-    oldConfig?.defaultReasoningEffort !== config.defaultReasoningEffort
-  useServerState.setState(
-    endpointChanged ? { config, models: [], manualModels: [], efforts: new Map() } : { config }
-  )
-  if (endpointChanged || defaultChanged) {
-    restoreModelDefaults()
+  useServerState.setState(endpointChanged ? { config, models: [], manualModels: [] } : { config })
+  if (endpointChanged) {
+    restoreModelSelection(config)
   }
   if (!config.baseUrl) {
     setProvider('deepseek')

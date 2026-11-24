@@ -8,8 +8,8 @@ const REASONING_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', '
 const UPSTREAM_ERROR = 'The OpenAI provider could not complete the request.'
 const DONE = 'data: [DONE]\n\n'
 
-function chatPayload(config, body) {
-  const model = body.model ?? config.defaultModel
+function chatPayload(body) {
+  const model = body.model
   if (typeof model !== 'string' || !model.trim() || model.length > 1024) {
     throw new HttpError(400, 'Select an OpenAI model.')
   }
@@ -327,7 +327,7 @@ export async function streamChat(
   if (!config.baseUrl) {
     throw new HttpError(400, 'Set the OpenAI base URL in Settings.')
   }
-  const payload = chatPayload(config, body)
+  const payload = chatPayload(body)
   const strength = validateSearchStrength(
     body.search_strength === undefined
       ? body.web_search === true

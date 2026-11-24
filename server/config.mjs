@@ -7,8 +7,6 @@ const KEYS = {
   password: 'SITE_PASSWORD',
   baseUrl: 'OPENAI_BASE_URL',
   apiKey: 'OPENAI_API_KEY',
-  defaultModel: 'OPENAI_DEFAULT_MODEL',
-  defaultReasoningEffort: 'OPENAI_DEFAULT_REASONING_EFFORT',
   modelPresets: 'OPENAI_MODEL_PRESETS',
 }
 
@@ -17,14 +15,6 @@ function validate(field, value) {
     throw new HttpError(400, 'Invalid ' + KEYS[field] + '.')
   }
   const trimmed = value.trim()
-  if (field === 'defaultReasoningEffort') {
-    if (
-      !['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(trimmed)
-    ) {
-      throw new HttpError(400, 'Invalid OPENAI_DEFAULT_REASONING_EFFORT.')
-    }
-    return trimmed
-  }
   if (field === 'password' && (!trimmed || trimmed.length > 1024)) {
     throw new HttpError(400, 'Enter a site password between 1 and 1024 characters.')
   }
@@ -56,13 +46,18 @@ function validate(field, value) {
 }
 
 function validateModelPreset(value) {
-  const model = validate('defaultModel', value?.model)
-  if (!model || model.length > 1024) {
+  const model = typeof value?.model === 'string' ? value.model.trim() : ''
+  if (!model || model.length > 1024 || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(value.model)) {
     throw new HttpError(400, 'Invalid preset model.')
+  }
+  if (
+    !['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(value.effort)
+  ) {
+    throw new HttpError(400, 'Invalid preset reasoning effort.')
   }
   return {
     model,
-    effort: validate('defaultReasoningEffort', value.effort),
+    effort: value.effort,
     searchStrength: validateSearchStrength(
       value.searchStrength === undefined ? 'off' : value.searchStrength
     ),
@@ -116,7 +111,7 @@ export async function loadConfig(path) {
       field,
       field === 'modelPresets'
         ? readModelPresets(values.get(key))
-        : validate(field, values.get(key) || (field === 'defaultReasoningEffort' ? 'default' : '')),
+        : validate(field, values.get(key) || ''),
     ])
   )
 }
@@ -145,16 +140,6 @@ export function editConfig(current, body) {
   return {
     baseUrl,
     modelPresets,
-    defaultModel:
-      body.defaultModel === undefined
-        ? current.defaultModel
-        : validate('defaultModel', body.defaultModel),
-    defaultReasoningEffort: validate(
-      'defaultReasoningEffort',
-      body.defaultReasoningEffort === undefined
-        ? (current.defaultReasoningEffort ?? 'default')
-        : body.defaultReasoningEffort
-    ),
     apiKey: body.apiKey === undefined ? current.apiKey : validate('apiKey', body.apiKey),
     password: body.password === undefined ? current.password : validate('password', body.password),
   }
@@ -174,6 +159,9 @@ export async function writeConfig(path, config) {
     const contents = []
     for (const line of old.replace(/\r?\n$/, '').split(/\r?\n/)) {
       const key = line.slice(0, line.indexOf('=')).trim()
+      if (key === 'OPENAI_DEFAULT_MODEL' || key === 'OPENAI_DEFAULT_REASONING_EFFORT') {
+        continue
+      }
       if (!line.includes('=') || !values.has(key)) {
         contents.push(line)
       } else if (!updated.has(key)) {
@@ -194,16 +182,8 @@ export async function writeConfig(path, config) {
   }
 }
 
-export const publicConfig = ({
+export const publicConfig = ({ baseUrl, modelPresets, apiKey }) => ({
   baseUrl,
-  defaultModel,
-  defaultReasoningEffort,
-  modelPresets,
-  apiKey,
-}) => ({
-  baseUrl,
-  defaultModel,
-  defaultReasoningEffort,
   modelPresets,
   hasApiKey: Boolean(apiKey),
 })

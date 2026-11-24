@@ -399,17 +399,11 @@ export const ModelControls = () => {
       setSavingPreset(false)
     }
   }
-  if (!showSelectors) {
+  if (!showSelectors && model) {
     return null
   }
   const choices = [
-    ...new Set([
-      model,
-      config?.defaultModel ?? '',
-      ...models,
-      ...manualModels,
-      ...modelPresets.map((p) => p.model),
-    ]),
+    ...new Set([model, ...models, ...manualModels, ...modelPresets.map((p) => p.model)]),
   ].filter(Boolean)
   return (
     <div className={styles.configSelectors}>
